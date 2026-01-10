@@ -8,7 +8,7 @@
     <style>
         :root {
             --grid-size: 8;
-            --cell-size: min(9vw, 45px);
+            --cell-size: min(10vw, 10vh, 65px); 
             --mini-cell-size: 12px;
             --neon-cyan: #00f3ff;
             --neon-green: #00ff9f;
@@ -16,12 +16,7 @@
             --neon-magenta: #ff00ff;
             --neon-red: #ff3366;
             
-            --dim-cyan: #004c50;
-            --dim-green: #004d30;
-            --dim-amber: #553300;
-            --dim-magenta: #550055;
-            --dim-trace: #222222;
-            
+            --dim-trace: #444444;
             --bg-black: #050506;
             --wall-round: 2px;
         }
@@ -29,13 +24,13 @@
         html, body {
             width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: hidden;
             position: fixed; overscroll-behavior-y: contain; touch-action: none;
+            user-select: none; -webkit-user-select: none;
         }
 
         body {
             background-color: var(--bg-black);
             color: #fff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             display: flex; flex-direction: column; align-items: center; overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
         }
 
         .header-strip {
@@ -53,93 +48,47 @@
         .cyber-btn:disabled { opacity: 0.1; cursor: not-allowed; border-color: #333; color: #555; }
         .btn-action { border-color: var(--neon-green); color: var(--neon-green); }
         .btn-kill { border-color: var(--neon-red); color: var(--neon-red); }
-        .btn-decrypt { border-color: var(--neon-amber); color: var(--neon-amber); opacity: 0.6; }
-        .btn-help { border-color: #fff; color: #fff; opacity: 0.8; font-size: 14px; padding: 0 10px; }
 
         .size-select {
             background: #000; color: var(--neon-cyan); border: 1px solid var(--neon-cyan);
-            font-size: 10px; padding: 2px 4px; outline: none; border-radius: 2px;
+            font-size: 10px; padding: 2px 4px; border-radius: 2px;
         }
 
         .grid-wrapper {
             margin-top: 10px; display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto;
-            max-width: 98vw; padding: 15px; box-sizing: border-box; justify-content: center;
-            user-select: none;
+            max-width: 98vw; padding: 10px; box-sizing: border-box; justify-content: center;
         }
 
         .cyber-grid {
-            display: grid;
-            gap: 1px; 
-            background: rgba(0, 243, 255, 0.2); 
-            border: 2px solid rgba(0, 243, 255, 0.9);
-            box-shadow: 0 0 40px rgba(0, 243, 255, 0.1);
-            position: relative;
-            overflow: hidden;
-            touch-action: none;
+            display: grid; gap: 1px; background: rgba(0, 243, 255, 0.2); 
+            border: 2px solid rgba(0, 243, 255, 0.9); position: relative;
         }
 
         .cell {
-            width: var(--cell-size); height: var(--cell-size); 
-            background: var(--bg-black); 
-            position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer;
-            z-index: 5;
+            width: var(--cell-size); height: var(--cell-size); background: var(--bg-black); 
+            position: relative; display: flex; align-items: center; justify-content: center; 
+            cursor: pointer; z-index: 5; touch-action: none;
         }
 
-        /* VICTORY OVERLAY */
-        #victoryOverlay {
-            position: absolute; inset: 0; background: rgba(0,0,0,0.8);
-            z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: center;
-            border: 4px solid var(--neon-green); box-shadow: inset 0 0 50px var(--neon-green);
-            pointer-events: none;
-        }
-        .scan-line {
-            position: absolute; width: 100%; height: 2px; background: var(--neon-green);
-            box-shadow: 0 0 20px var(--neon-green); animation: scanner 2.5s linear infinite;
-        }
+        /* Erratic cell state (for secondary subgraphs) */
+        .cell-erratic { background: radial-gradient(circle, rgba(255, 0, 255, 0.15) 0%, transparent 70%); animation: cell-jitter 4s infinite; }
 
-        @keyframes scanner { 0% { top: 0; } 100% { top: 100%; } }
+        /* Neural Trace Lines */
+        .trace-line { position: absolute; background: #fff; z-index: 20; pointer-events: none; opacity: 0.4; transition: 0.2s; }
+        .trace-v { width: 2px; left: calc(50% - 1px); height: 100%; }
+        .trace-h { height: 2px; top: calc(50% - 1px); width: 100%; }
+        .trace-n { top: 0; height: 50%; } .trace-s { bottom: 0; height: 50%; } .trace-e { right: 0; width: 50%; } .trace-w { left: 0; width: 50%; }
+        
+        .trace-complete { background: var(--neon-green) !important; opacity: 0.8; box-shadow: 0 0 8px var(--neon-green); }
+        .trace-error { background: var(--neon-red) !important; box-shadow: 0 0 8px var(--neon-red) !important; opacity: 1; }
+        .trace-erratic { background: var(--neon-magenta) !important; box-shadow: 0 0 8px var(--neon-magenta) !important; opacity: 0.6; }
 
-        /* HELP MODAL */
-        #helpModal {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.9);
-            z-index: 300; display: none; padding: 20px; flex-direction: column; align-items: center; justify-content: center;
-        }
-        .modal-content {
-            max-width: 500px; width: 100%; background: #0a0a0f; border: 1px solid var(--neon-cyan);
-            padding: 24px; box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);
-            overflow-y: auto; max-height: 80vh;
-        }
-
-        /* HELP ICONS */
-        .help-icon-inline {
-            display: inline-flex;
-            vertical-align: middle;
-            width: 18px; height: 18px;
-            margin: 0 2px;
-            border: 1px solid rgba(255,255,255,0.2);
-            background: #000;
-            position: relative;
-            align-items: center; justify-content: center;
-        }
-
-        /* SECTOR ENERGY FIELDS */
-        .row-complete-bg { 
-            position: absolute; left: 0; right: 0; height: var(--cell-size); 
-            background: linear-gradient(90deg, transparent, rgba(0, 255, 159, 0.15), transparent); 
-            pointer-events: none; z-index: 1;
-            animation: sector-pulse 2s ease-in-out infinite;
-        }
-        .col-complete-bg { 
-            position: absolute; top: 0; bottom: 0; width: var(--cell-size); 
-            background: linear-gradient(0deg, transparent, rgba(0, 243, 255, 0.15), transparent); 
-            pointer-events: none; z-index: 1;
-            animation: sector-pulse 2s ease-in-out infinite reverse;
-        }
-
-        @keyframes sector-pulse {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 1; }
-        }
+        /* Path Markers */
+        .path-dot { width: 22%; height: 22%; background: white; border-radius: 50%; box-shadow: 0 0 8px white; z-index: 25; pointer-events: none; }
+        .path-dot-dim { background: #444 !important; box-shadow: none !important; }
+        .path-dot-complete { background: var(--neon-green) !important; box-shadow: 0 0 10px var(--neon-green) !important; }
+        .path-dot-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; animation: jitter-fast 0.1s infinite !important; }
+        .path-dot-erratic { background: var(--neon-magenta) !important; box-shadow: 0 0 15px var(--neon-magenta) !important; animation: jitter-fast 0.15s infinite !important; }
 
         /* Dead End Nodes */
         .node { 
@@ -151,79 +100,60 @@
         
         .node-complete { border-color: var(--neon-green) !important; box-shadow: 0 0 12px var(--neon-green) !important; }
         .node-complete .node-core { background: var(--neon-green) !important; }
-        .node-isolated { border-color: var(--neon-magenta) !important; box-shadow: 0 0 20px var(--neon-magenta) !important; animation: jitter-fast 0.1s infinite !important; }
-        .node-isolated .node-core { background: var(--neon-magenta) !important; }
+        
         .node-conflict { border-color: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; animation: jitter-fast 0.08s infinite !important; }
         .node-conflict .node-core { background: var(--neon-red) !important; }
 
-        /* Path Markers */
-        .path-dot { width: 22%; height: 22%; background: white; border-radius: 50%; box-shadow: 0 0 8px white; z-index: 25; pointer-events: none; }
-        .path-dot-dim { background: #444 !important; box-shadow: none !important; }
-        .path-dot-complete { background: var(--neon-green) !important; box-shadow: 0 0 10px var(--neon-green) !important; }
-        .path-dot-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; animation: jitter-fast 0.1s infinite !important; }
-
-        .trace-line { position: absolute; background: rgba(255, 255, 255, 0.6); z-index: 24; pointer-events: none; }
-        .trace-v { width: 2px; left: calc(50% - 1px); height: 100%; }
-        .trace-h { height: 2px; top: calc(50% - 1px); width: 100%; }
-        .trace-n { top: 0; height: 50%; } .trace-s { bottom: 0; height: 50%; } .trace-e { right: 0; width: 50%; } .trace-w { left: 0; width: 50%; }
-        .trace-dim { background: var(--dim-trace) !important; }
-        .trace-complete { background: var(--neon-green) !important; }
-        .trace-error { background: var(--neon-red) !important; animation: jitter-fast 0.1s infinite !important; box-shadow: 0 0 5px var(--neon-red); z-index: 26; }
+        .node-erratic { border-color: var(--neon-magenta) !important; box-shadow: 0 0 15px var(--neon-magenta) !important; animation: jitter-fast 0.12s infinite !important; }
+        .node-erratic .node-core { background: var(--neon-magenta) !important; animation: core-pulse-fast 0.5s infinite !important; }
 
         /* Walls */
         .wall { position: absolute; inset: 5%; z-index: 12; pointer-events: none; border-radius: var(--wall-round); }
-        .bridge { position: absolute; z-index: 11; pointer-events: none; }
-        .bridge-v { width: 90%; left: 5%; height: 50%; }
-        .bridge-h { height: 90%; top: 5%; width: 50%; }
-        .bridge-n { top: 0; } .bridge-s { bottom: 0; } .bridge-w { left: 0; } .bridge-e { right: 0; }
+        .wall-l0 { background: var(--neon-cyan); box-shadow: 0 0 10px var(--neon-cyan); }
+        .wall-l1 { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
+        .wall-l2 { background: var(--neon-amber); box-shadow: 0 0 10px var(--neon-amber); }
+        .wall-l3 { background: var(--neon-magenta); box-shadow: 0 0 10px var(--neon-magenta); }
+        .wall-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; z-index: 15; animation: err-pulse 1.5s ease-in-out infinite !important; }
 
-        .wall-l0, .bridge-l0 { background: var(--neon-cyan); box-shadow: 0 0 10px var(--neon-cyan); }
-        .wall-l1, .bridge-l1 { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
-        .wall-l2, .bridge-l2 { background: var(--neon-amber); box-shadow: 0 0 10px var(--neon-amber); }
-        .wall-l3, .bridge-l3 { background: var(--neon-magenta); box-shadow: 0 0 10px var(--neon-magenta); }
-
-        .wall-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; z-index: 15; animation: err-pulse 2s ease-in-out infinite; }
-
-        .invalid-box { position: absolute; width: 50%; height: 50%; z-index: 30; pointer-events: none; display: flex; align-items: center; justify-content: center; }
-        .invalid-x { position: relative; width: 60%; height: 60%; }
-        .invalid-x::before, .invalid-x::after { content: ''; position: absolute; width: 100%; height: 1px; background: var(--neon-red); top: 50%; left: 0; }
+        /* Red X - Invalid Sectors */
+        .invalid-box { 
+            position: absolute; inset: 8%; z-index: 100; pointer-events: none; 
+            display: flex; align-items: center; justify-content: center; 
+            border: 2px solid rgba(255, 51, 102, 0.15); border-radius: 4px;
+        }
+        .invalid-box-high {
+            background: rgba(255, 51, 102, 0.25); border: 2.5px solid var(--neon-red);
+            box-shadow: 0 0 20px rgba(255, 51, 102, 0.6); animation: jitter-fast 0.1s infinite;
+        }
+        .invalid-x { position: relative; width: 75%; height: 75%; opacity: 0.3; }
+        .invalid-box-high .invalid-x { opacity: 0.95; }
+        .invalid-x::before, .invalid-x::after { 
+            content: ''; position: absolute; width: 100%; height: 4px; 
+            background: var(--neon-red); top: 50%; left: 0; border-radius: 2px;
+            box-shadow: 0 0 8px var(--neon-red);
+        }
         .invalid-x::before { transform: rotate(45deg); }
         .invalid-x::after { transform: rotate(-45deg); }
 
         /* Labels */
-        .count-neon { width: var(--cell-size); height: var(--cell-size); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 900; font-family: 'Courier New', monospace; color: #444; transition: 0.3s; }
-        .count-ok { color: var(--neon-green); text-shadow: 0 0 15px var(--neon-green); font-size: 1.4rem; }
+        .count-neon { width: var(--cell-size); height: var(--cell-size); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 900; font-family: 'Courier New', monospace; color: #444; }
+        .count-ok { color: var(--neon-green); text-shadow: 0 0 15px var(--neon-green); }
         .count-over { color: var(--neon-red); text-shadow: 0 0 15px var(--neon-red); }
 
         .label-container-row { display: flex; flex-direction: column; gap: 1px; } 
         .label-container-col { display: flex; gap: 1px; } 
         
-        .origin-indicator { position: absolute; width: 70%; height: 70%; border: 2px solid white; transform: rotate(45deg); animation: origin-pulse 1.5s infinite; pointer-events: none; z-index: 60; }
-        
-        /* Answer Key Styles */
-        .footer-admin {
-            margin: 40px 0 20px; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px;
-            border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px;
+        #victoryOverlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.8);
+            z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: center;
+            border: 4px solid var(--neon-green); box-shadow: inset 0 0 50px var(--neon-green); pointer-events: none;
         }
 
-        #answerKeySection {
-            padding: 15px; border: 1px dashed rgba(255, 170, 0, 0.3);
-            display: none; flex-direction: column; align-items: center; gap: 12px;
-            background: rgba(255, 170, 0, 0.02);
-        }
-        .mini-grid {
-            display: grid; gap: 1px; background: #222; border: 1px solid #444;
-        }
-        .mini-cell {
-            width: var(--mini-cell-size); height: var(--mini-cell-size); background: #000;
-        }
-        .mini-cell-wall { background: var(--neon-amber); box-shadow: 0 0 3px var(--neon-amber); }
-        .mini-cell-path { background: #111; }
-
-        @keyframes jitter-fast { 0% { transform: translate(0.5px, 0.5px); } 50% { transform: translate(-0.5px, -0.5px); } 100% { transform: translate(0.5px, 0.5px); } }
+        @keyframes jitter-fast { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, 1px); } }
+        @keyframes cell-jitter { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; transform: scale(0.98); } }
         @keyframes core-pulse { 0%, 100% { opacity: 0.4; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.1); } }
-        @keyframes origin-pulse { 0%, 100% { opacity: 1; transform: rotate(45deg) scale(0.5); } 50% { opacity: 0.2; transform: rotate(45deg) scale(0.8); } }
-        @keyframes err-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        @keyframes core-pulse-fast { 0%, 100% { transform: scale(0.5); opacity: 0.3; } 50% { transform: scale(1.3); opacity: 1; } }
+        @keyframes err-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.8; } }
     </style>
 </head>
 <body>
@@ -243,7 +173,6 @@
         <div class="px-3 border-l border-white/20">
             <span id="layerName" class="text-[10px] uppercase font-black tracking-widest text-cyan-400">Root</span>
         </div>
-        <button id="openHelpBtn" class="cyber-btn btn-help">?</button>
     </div>
 
     <div class="grid-wrapper">
@@ -251,66 +180,15 @@
         <div id="rowLabels" class="label-container-row"></div>
         <div id="mainGrid" class="cyber-grid">
             <div id="victoryOverlay">
-                <div class="scan-line"></div>
                 <div class="text-neon-green font-black text-2xl tracking-tighter">NEURAL LINK RESTORED</div>
-                <div class="text-[10px] text-white/60 tracking-[0.5em] mt-2">DATA FRAGMENTS RECONSTRUCTED</div>
             </div>
         </div>
     </div>
 
-    <div id="helpModal">
-        <div class="modal-content">
-            <h2 class="text-cyan-400 font-black text-xl mb-4 tracking-widest border-b border-cyan-800 pb-2">RECON MISSION INTEL</h2>
-            <div class="space-y-4 text-xs leading-relaxed text-gray-300">
-                <p><strong class="text-white uppercase tracking-tighter">Objective:</strong> Reconstruct the singular neural path. You only need to place the <span class="text-cyan-400">WALLS</span> <span class="help-icon-inline" style="background:var(--neon-cyan);box-shadow:0 0 5px var(--neon-cyan);"></span>. If the walls are correct, the remaining <span class="text-white">PATH</span> <span class="help-icon-inline"><span style="width:4px;height:4px;background:#fff;border-radius:50%;box-shadow:0 0 5px #fff;"></span></span> will be automatically recognized.</p>
-                
-                <div class="bg-white/5 p-3 border-l-2 border-green-500">
-                    <p class="mb-2"><strong class="text-green-400">MISSION CONSTRAINTS:</strong></p>
-                    <ul class="list-disc pl-4 space-y-2">
-                        <li>The numbers indicate the required <span class="text-cyan-400">WALL</span> count for that row or column.</li>
-                        <li>The <span class="text-white">PATH</span> must be a singular, continuous line connecting all 
-                            <span class="text-cyan-400">DEAD-END NODES</span> 
-                            <span class="help-icon-inline" style="border-color:var(--neon-cyan);"><span style="width:50%;height:50%;background:var(--neon-cyan);"></span></span>.
-                        </li>
-                        <li>Each <span class="text-cyan-400">DEAD-END NODE</span> marks an endpoint; it must be surrounded by 3 <span class="text-cyan-400">WALLS</span>.</li>
-                        <li>No paths may terminate in mid-air; every end point must have a <span class="text-cyan-400">DEAD-END NODE</span>.</li>
-                        <li>The path can never be wider than one cell (no 2x2 squares of path).</li>
-                    </ul>
-                </div>
-
-                <div>
-                    <p class="mb-2"><strong class="text-white uppercase tracking-tighter">Interface Mechanics:</strong></p>
-                    <ul class="list-disc pl-4 space-y-1">
-                        <li><span class="text-cyan-400 font-bold">1st Pulse:</span> Deploy <span class="text-cyan-400">WALL</span>.</li>
-                        <li><span class="text-white font-bold">2nd Pulse:</span> Mark <span class="text-white">PATH</span> (Optional/Visual aid).</li>
-                        <li><span class="text-gray-500 font-bold">3rd Pulse:</span> Scrub sector (Null).</li>
-                    </ul>
-                </div>
-
-                <div class="bg-cyan-900/10 border border-cyan-800/30 p-2 text-[10px]">
-                    <p class="mb-1 uppercase font-black text-cyan-600">Status Legend:</p>
-                    <div class="flex items-center gap-4">
-                        <span class="flex items-center gap-1"><span class="help-icon-inline" style="border-color:var(--neon-green);"><span style="width:50%;height:50%;background:var(--neon-green);"></span></span> Synced</span>
-                        <span class="flex items-center gap-1"><span class="help-icon-inline" style="border-color:var(--neon-red);"><span style="width:50%;height:50%;background:var(--neon-red);"></span></span> Conflict</span>
-                        <span class="flex items-center gap-1"><span class="help-icon-inline" style="border-color:var(--neon-magenta);"><span style="width:50%;height:50%;background:var(--neon-magenta);"></span></span> Isolated</span>
-                    </div>
-                </div>
-
-                <div>
-                    <p class="mb-2 uppercase text-green-400 font-black">Hypothetical Simulation (FORK):</p>
-                    <p>Execute <span class="text-green-400 font-bold">FORK</span> to test a theory in a sub-layer. <span class="text-cyan-400 font-bold">COMMIT</span> valid results or <span class="text-red-500 font-bold">ABORT</span> dead ends.</p>
-                </div>
-            </div>
-            <button id="closeHelpBtn" class="mt-6 w-full py-2 bg-cyan-950 border border-cyan-500 text-cyan-400 font-black text-[10px] uppercase">Acknowledge Intel</button>
-        </div>
-    </div>
-
-    <div class="footer-admin">
-        <button id="decryptBtn" class="cyber-btn btn-decrypt">Toggle Decrypt Overlay</button>
-        
-        <div id="answerKeySection">
-            <span class="text-[10px] text-amber-500 font-black uppercase tracking-[0.3em]">Matrix Solution Data</span>
-            <div id="miniGrid" class="mini-grid"></div>
+    <div class="p-4 flex flex-col items-center">
+        <button id="decryptBtn" class="cyber-btn opacity-40">Toggle Decrypt Overlay</button>
+        <div id="answerKeySection" class="hidden flex-col items-center gap-3 p-4 border border-dashed border-amber-500/30 bg-amber-500/5">
+            <div id="miniGrid" class="grid gap-px bg-zinc-800 border border-zinc-700"></div>
         </div>
     </div>
 
@@ -318,24 +196,23 @@
         let SIZE = 8;
         let solution = [];
         let layers = [];
-        let layerStartIdxs = []; 
         let currentIdx = 0;
         let targets = { r: [], c: [] };
         let isWon = false;
         let showKey = false;
         const colors = ["cyan", "green", "amber", "magenta"];
 
-        // Drag State
         let isDragging = false;
         let dragMode = null; 
 
         function init() {
             isWon = false;
-            showKey = false;
             document.getElementById('victoryOverlay').style.display = 'none';
-            document.getElementById('answerKeySection').style.display = 'none';
             SIZE = parseInt(document.getElementById('gridSizeSelect').value);
+            
+            let scaleFactor = (SIZE <= 4) ? 1.8 : (SIZE <= 6 ? 1.4 : 1.0);
             document.documentElement.style.setProperty('--grid-size', SIZE);
+            document.documentElement.style.setProperty('--cell-size', `min(${10 * scaleFactor}vw, ${10 * scaleFactor}vh, 75px)`);
             
             solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
             const start = {r: Math.floor(Math.random()*SIZE), c: Math.floor(Math.random()*SIZE)};
@@ -367,7 +244,6 @@
             targets.r = solution.map(row => row.filter(v => v === 1).length);
             targets.c = Array(SIZE).fill(0).map((_, c) => solution.filter(r => r[c] === 1).length);
             layers = [Array(SIZE * SIZE).fill(0)];
-            layerStartIdxs = [null];
             currentIdx = 0;
             render();
             renderMiniMap();
@@ -380,53 +256,35 @@
             for(let r=0; r<SIZE; r++) {
                 for(let c=0; c<SIZE; c++) {
                     const div = document.createElement('div');
-                    div.className = `mini-cell ${solution[r][c] === 1 ? 'mini-cell-wall' : 'mini-cell-path'}`;
+                    div.style.width = 'var(--mini-cell-size)';
+                    div.style.height = 'var(--mini-cell-size)';
+                    div.className = solution[r][c] === 1 ? 'bg-amber-500' : 'bg-black';
                     mini.appendChild(div);
                 }
             }
         }
 
         function handleCellAction(idx) {
-            const r = Math.floor(idx / SIZE);
-            const c = idx % SIZE;
+            const r = Math.floor(idx / SIZE), c = idx % SIZE;
             if (isWon || isTargetDeadEnd(r, c)) return;
 
-            for (let j = 0; j < currentIdx; j++) {
-                if (layers[j][idx] !== 0) return;
-            }
+            for (let j = 0; j < currentIdx; j++) if (layers[j][idx] !== 0) return;
 
             if (!isDragging) {
                 isDragging = true;
                 const currentVal = layers[currentIdx][idx];
-                
-                if (currentVal === 0) {
-                    dragMode = 1; 
-                } else if (currentVal === 1) {
-                    dragMode = 2; 
-                } else {
-                    dragMode = 0; 
-                }
-                
+                dragMode = currentVal === 0 ? 1 : (currentVal === 1 ? 2 : 0);
                 layers[currentIdx][idx] = dragMode;
             } else {
                 layers[currentIdx][idx] = dragMode;
             }
-
-            if (layers[currentIdx][idx] !== 0 && layerStartIdxs[currentIdx] === null) {
-                layerStartIdxs[currentIdx] = idx;
-            } else if (layers[currentIdx][idx] === 0 && layerStartIdxs[currentIdx] === idx) {
-                layerStartIdxs[currentIdx] = null;
-            }
-
             update();
         }
 
         function render() {
             const gameB = document.getElementById('mainGrid');
             const rowL = document.getElementById('rowLabels'), colL = document.getElementById('colLabels');
-            
-            const oldCells = gameB.querySelectorAll('.cell');
-            oldCells.forEach(c => c.remove());
+            gameB.querySelectorAll('.cell').forEach(c => c.remove());
             rowL.innerHTML = ''; colL.innerHTML = '';
             
             gameB.style.gridTemplateColumns = `repeat(${SIZE}, var(--cell-size))`;
@@ -439,24 +297,11 @@
             for(let i=0; i<SIZE*SIZE; i++) {
                 const gCell = document.createElement('div');
                 gCell.className = 'cell';
-                gCell.dataset.idx = i;
-                
-                gCell.onpointerdown = (e) => {
-                    gCell.releasePointerCapture(e.pointerId); 
-                    handleCellAction(i);
-                };
-                gCell.onpointerenter = (e) => {
-                    if (isDragging) handleCellAction(i);
-                };
-
+                gCell.onpointerdown = (e) => { gCell.releasePointerCapture(e.pointerId); handleCellAction(i); };
+                gCell.onpointerenter = () => { if (isDragging) handleCellAction(i); };
                 gameB.appendChild(gCell);
             }
-
-            window.onpointerup = () => {
-                isDragging = false;
-                dragMode = null;
-            };
-
+            window.onpointerup = () => { isDragging = false; dragMode = null; };
             update();
         }
 
@@ -470,17 +315,36 @@
             return walls >= 3;
         }
 
+        function getShortestPathBetween(merged, startIdx, endIdx) {
+            let queue = [[startIdx]];
+            let visited = new Set([startIdx]);
+            while (queue.length > 0) {
+                let path = queue.shift();
+                let curr = path[path.length - 1];
+                if (curr === endIdx) return path;
+
+                let r = Math.floor(curr / SIZE), c = curr % SIZE;
+                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
+                    let nr = r + dr, nc = c + dc;
+                    let nIdx = nr * SIZE + nc;
+                    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && !visited.has(nIdx)) {
+                        if (merged[nIdx] === 2 || isTargetDeadEnd(nr, nc)) {
+                            visited.add(nIdx);
+                            queue.push([...path, nIdx]);
+                        }
+                    }
+                });
+            }
+            return null;
+        }
+
         function update() {
             if (isWon) return;
-
-            const grid = document.getElementById('mainGrid');
-            const cells = grid.querySelectorAll('.cell');
+            const cells = document.getElementById('mainGrid').querySelectorAll('.cell');
             const rl = document.getElementById('rowLabels').children;
             const cl = document.getElementById('colLabels').children;
             document.getElementById('layerName').innerText = currentIdx === 0 ? "Root" : `Sub-${currentIdx}`;
             document.getElementById('layerName').style.color = `var(--neon-${colors[currentIdx]})`;
-
-            grid.querySelectorAll('.row-complete-bg, .col-complete-bg').forEach(el => el.remove());
 
             const merged = Array(SIZE*SIZE).fill(0);
             layers.forEach(l => l.forEach((s, i) => { if(s === 1) merged[i] = 1; if(s === 2 && merged[i] !== 1) merged[i] = 2; }));
@@ -491,57 +355,66 @@
                 if(solution[r][c] === 1 && merged[i] !== 1) allWallsCorrect = false;
                 if(merged[i] === 1 && solution[r][c] !== 1) allWallsCorrect = false;
             }
-
-            if(allWallsCorrect) {
-                for(let i=0; i<SIZE*SIZE; i++) {
-                    const r = Math.floor(i/SIZE), c = i%SIZE;
-                    if(solution[r][c] === 0 && !isTargetDeadEnd(r,c)) {
-                        layers[currentIdx][i] = 2;
-                        merged[i] = 2;
-                    }
-                }
-                isWon = true;
-                document.getElementById('victoryOverlay').style.display = 'flex';
-            }
+            if(allWallsCorrect) { isWon = true; document.getElementById('victoryOverlay').style.display = 'flex'; return; }
 
             const rowTotals = Array(SIZE).fill(0), colTotals = Array(SIZE).fill(0);
-            const rowErrors = [], colErrors = [];
-            
             for(let r=0; r<SIZE; r++) {
                 let s = 0; for(let c=0; c<SIZE; c++) if(merged[r*SIZE+c] === 1) s++;
                 rowTotals[r] = s;
                 rl[r].innerText = targets.r[r];
-                const isComplete = s === targets.r[r];
-                rl[r].className = `count-neon ${isComplete ? 'count-ok' : (s > targets.r[r] ? 'count-over' : '')}`;
-                if(isComplete) {
-                    const bg = document.createElement('div');
-                    bg.className = 'row-complete-bg';
-                    bg.style.top = `${r * (100/SIZE)}%`;
-                    grid.appendChild(bg);
-                }
-                if(s > targets.r[r]) rowErrors.push(r);
+                rl[r].className = `count-neon ${s === targets.r[r] ? 'count-ok' : (s > targets.r[r] ? 'count-over' : '')}`;
             }
             for(let c=0; c<SIZE; c++) {
                 let s = 0; for(let r=0; r<SIZE; r++) if(merged[r*SIZE+c] === 1) s++;
                 colTotals[c] = s;
                 cl[c].innerText = targets.c[c];
-                const isComplete = s === targets.c[c];
-                cl[c].className = `count-neon ${isComplete ? 'count-ok' : (s > targets.c[c] ? 'count-over' : '')}`;
-                if(isComplete) {
-                    const bg = document.createElement('div');
-                    bg.className = 'col-complete-bg';
-                    bg.style.left = `${c * (100/SIZE)}%`;
-                    grid.appendChild(bg);
-                }
-                if(s > targets.c[c]) colErrors.push(c);
+                cl[c].className = `count-neon ${s === targets.c[c] ? 'count-ok' : (s > targets.c[c] ? 'count-over' : '')}`;
             }
 
-            const connectedToDeadEnd = new Set();
-            const visitedPath = new Set();
+            // Subgraph Analysis (Island detection)
+            const subgraphMap = Array(SIZE * SIZE).fill(-1);
+            let subgraphs = [];
+            for (let i = 0; i < SIZE * SIZE; i++) {
+                if (merged[i] !== 1 && subgraphMap[i] === -1) {
+                    const currentGraph = [];
+                    const stack = [i];
+                    subgraphMap[i] = subgraphs.length;
+                    while (stack.length > 0) {
+                        const curr = stack.pop();
+                        currentGraph.push(curr);
+                        const r = Math.floor(curr/SIZE), c = curr % SIZE;
+                        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
+                            const nr = r + dr, nc = c + dc;
+                            const nIdx = nr * SIZE + nc;
+                            if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && merged[nIdx] !== 1 && subgraphMap[nIdx] === -1) {
+                                subgraphMap[nIdx] = subgraphs.length;
+                                stack.push(nIdx);
+                            }
+                        });
+                    }
+                    subgraphs.push(currentGraph);
+                }
+            }
+
+            // Determine Primary Graph (Largest)
+            let primaryIdx = -1;
+            if (subgraphs.length > 0) {
+                let maxLen = -1;
+                subgraphs.forEach((g, idx) => { if(g.length > maxLen) { maxLen = g.length; primaryIdx = idx; } });
+            }
+            const erraticIndices = new Set();
+            subgraphs.forEach((g, idx) => {
+                if (idx !== primaryIdx) g.forEach(i => erraticIndices.add(i));
+            });
+
+            const authenticatedIndices = new Set();
+            const authenticatedEdges = new Set();
+            const visitedNetwork = new Set();
+            
             for(let i=0; i<SIZE*SIZE; i++) {
-                if(merged[i] === 2 && !visitedPath.has(i)) {
-                    let cluster = [], deadEndsFound = new Set(), stack = [i];
-                    visitedPath.add(i);
+                if(merged[i] === 2 && !visitedNetwork.has(i)) {
+                    let cluster = [], deadEndsFound = [], stack = [i];
+                    visitedNetwork.add(i);
                     while(stack.length > 0) {
                         let idx = stack.pop(), cr = Math.floor(idx/SIZE), cc = idx%SIZE;
                         cluster.push(idx);
@@ -549,15 +422,29 @@
                             let nr=cr+dr, nc=cc+dc;
                             if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE) {
                                 let nIdx = nr*SIZE+nc;
-                                if(merged[nIdx] === 2 && !visitedPath.has(nIdx)) {
-                                    visitedPath.add(nIdx); stack.push(nIdx);
-                                } else if(isTargetDeadEnd(nr, nc)) {
-                                    deadEndsFound.add(nIdx);
+                                if(merged[nIdx] === 2 && !visitedNetwork.has(nIdx)) { visitedNetwork.add(nIdx); stack.push(nIdx); } 
+                                else if(isTargetDeadEnd(nr, nc)) {
+                                    if(!deadEndsFound.includes(nIdx)) deadEndsFound.push(nIdx);
                                 }
                             }
                         });
                     }
-                    if(deadEndsFound.size >= 2) cluster.forEach(idx => connectedToDeadEnd.add(idx));
+                    
+                    if(deadEndsFound.length >= 2) {
+                        for(let start = 0; start < deadEndsFound.length; start++) {
+                            for(let end = start + 1; end < deadEndsFound.length; end++) {
+                                let path = getShortestPathBetween(merged, deadEndsFound[start], deadEndsFound[end]);
+                                if(path) {
+                                    path.forEach(nodeIdx => authenticatedIndices.add(nodeIdx));
+                                    for(let pIdx=0; pIdx < path.length - 1; pIdx++) {
+                                        let u = Math.min(path[pIdx], path[pIdx+1]);
+                                        let v = Math.max(path[pIdx], path[pIdx+1]);
+                                        authenticatedEdges.add(`${u}-${v}`);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -574,97 +461,84 @@
             for(let i=0; i<SIZE*SIZE; i++) {
                 const cell = cells[i], r = Math.floor(i/SIZE), c = i%SIZE;
                 cell.innerHTML = '';
+                cell.classList.remove('cell-erratic');
                 
                 let playerWalls = 0;
+                let connectedToManualPath = 0;
+
                 [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
                     let nr=r+dr, nc=c+dc;
-                    if(nr<0||nr>=SIZE||nc<0||nc>=SIZE||merged[nr*SIZE+nc] === 1) playerWalls++;
+                    if(nr<0||nr>=SIZE||nc<0||nc>=SIZE||merged[nr*SIZE+nc] === 1) { playerWalls++; }
+                    else if(merged[nr*SIZE+nc] === 2) { connectedToManualPath++; }
                 });
 
-                const isCellClump = clumps.has(i);
+                const isConflictNode = clumps.has(i);
+                const isErratic = erraticIndices.has(i);
+
+                if (isErratic) cell.classList.add('cell-erratic');
 
                 if(isTargetDeadEnd(r, c)) {
                     const node = document.createElement('div');
-                    node.className = 'node';
-                    if(playerWalls === 3) node.classList.add('node-complete');
-                    if(playerWalls === 4) node.classList.add('node-isolated');
-                    
-                    let pathsAround = 0;
-                    [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                        let nr=r+dr, nc=c+dc;
-                        if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && merged[nr*SIZE+nc] === 2) pathsAround++;
-                    });
-                    if(pathsAround > 1) node.classList.add('node-conflict');
+                    let nodeClass = 'node';
+                    if (isErratic || playerWalls === 4) {
+                        nodeClass += ' node-erratic'; // Isolated or surrounded
+                    } else if (playerWalls === 3) {
+                        nodeClass += ' node-complete'; // Capped
+                    } else if (connectedToManualPath >= 2) {
+                        nodeClass += ' node-conflict'; // Branching
+                    }
+                    node.className = nodeClass;
                     node.innerHTML = '<div class="node-core"></div>';
                     cell.appendChild(node);
+                } else if(playerWalls >= 3 && merged[i] !== 1) {
+                    const box = document.createElement('div');
+                    box.className = 'invalid-box';
+                    if ((rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c]) || merged[i] === 2 || targets.r[r] === 0 || targets.c[c] === 0) {
+                        box.classList.add('invalid-box-high');
+                    }
+                    box.innerHTML = '<div class="invalid-x"></div>';
+                    cell.appendChild(box);
+                }
+
+                if (merged[i] !== 1) {
+                    const isManual = (merged[i] === 2);
+                    const isDead = isTargetDeadEnd(r, c);
                     
-                    [[0,1,'e','h'], [0,-1,'w','h'], [1,0,'s','v'], [-1,0,'n','v']].forEach(([dr, dc, dir, orient]) => {
-                        let nr = r+dr, nc = c+dc;
-                        if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE && merged[nr*SIZE+nc] === 2) {
-                            const t = document.createElement('div');
-                            const activeL = layers[currentIdx][nr*SIZE+nc] === 2;
-                            const isPathComplete = connectedToDeadEnd.has(nr*SIZE+nc);
-                            const isNClump = clumps.has(nr*SIZE+nc);
-                            t.className = `trace-line trace-${orient} trace-${dir} ${activeL ? '' : 'trace-dim'} ${isPathComplete ? 'trace-complete' : ''} ${isNClump ? 'trace-error' : ''}`;
-                            cell.appendChild(t);
-                        }
-                    });
-                } else {
-                    if(playerWalls >= 3 && merged[i] !== 1) {
-                        const box = document.createElement('div');
-                        box.className = 'invalid-box';
-                        const rowFull = rowTotals[r] >= targets.r[r];
-                        const colFull = colTotals[c] >= targets.c[c];
-                        box.style.opacity = (rowFull || colFull) ? "1" : "0.15";
-                        box.innerHTML = '<div class="invalid-x"></div>';
-                        cell.appendChild(box);
+                    if (isManual || isDead) {
+                        [[0,1,'e','h','trace-e'],[0,-1,'w','h','trace-w'],[1,0,'s','v','trace-s'],[-1,0,'n','v','trace-n']].forEach(([dr, dc, dir, orient, cls]) => {
+                            let nr=r+dr, nc=c+dc;
+                            if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE) {
+                                const nIdx = nr*SIZE+nc;
+                                if (merged[nIdx] === 2 || isTargetDeadEnd(nr, nc)) {
+                                    const trace = document.createElement('div');
+                                    trace.className = `trace-line trace-${orient} ${cls}`;
+                                    
+                                    let u = Math.min(i, nIdx), v = Math.max(i, nIdx);
+                                    if (isConflictNode || clumps.has(nIdx)) {
+                                        trace.classList.add('trace-error');
+                                    } else if (isErratic) {
+                                        trace.classList.add('trace-erratic');
+                                    } else if (authenticatedEdges.has(`${u}-${v}`)) {
+                                        trace.classList.add('trace-complete');
+                                    }
+                                    
+                                    cell.appendChild(trace);
+                                }
+                            }
+                        });
                     }
                 }
 
                 layers.forEach((layer, lIdx) => {
-                    const active = (lIdx === currentIdx);
-                    const isCellError = rowErrors.includes(r) || colErrors.includes(c);
-
                     if (layer[i] === 1) {
-                        const w = document.createElement('div');
-                        w.className = `wall wall-l${lIdx} ${active ? '' : 'wall-dim'} ${isCellError ? 'wall-error' : ''}`;
-                        cell.appendChild(w);
-                        
-                        [[0,1,'e','h'], [0,-1,'w','h'], [1,0,'s','v'], [-1,0,'n','v']].forEach(([dr, dc, dir, orient]) => {
-                            let nr = r+dr, nc = c+dc;
-                            if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE && merged[nr*SIZE+nc] === 1) {
-                                const isNeighborError = rowErrors.includes(nr) || colErrors.includes(nc);
-                                if (!isCellError && !isNeighborError) {
-                                    const b = document.createElement('div');
-                                    b.className = `bridge bridge-${orient} bridge-${dir} bridge-l${lIdx} ${active ? '' : 'bridge-dim'}`;
-                                    cell.appendChild(b);
-                                }
-                            }
-                        });
+                        cell.appendChild(Object.assign(document.createElement('div'), {className: `wall wall-l${lIdx} ${lIdx === currentIdx ? '' : 'opacity-40'} ${rowTotals[r]>targets.r[r] || colTotals[c]>targets.c[c] ? 'wall-error' : ''}`}));
                     } else if (layer[i] === 2) {
-                        const dot = document.createElement('div');
-                        const isPathComplete = connectedToDeadEnd.has(i);
-                        dot.className = `path-dot ${active ? '' : 'path-dot-dim'} ${isPathComplete ? 'path-dot-complete' : ''} ${isCellClump ? 'path-dot-error' : ''}`;
-                        cell.appendChild(dot);
+                        let dotClass = `path-dot ${lIdx === currentIdx ? '' : 'path-dot-dim'}`;
+                        if (clumps.has(i)) dotClass += ' path-dot-error';
+                        else if (isErratic) dotClass += ' path-dot-erratic';
+                        else if (authenticatedIndices.has(i)) dotClass += ' path-dot-complete';
                         
-                        [[0,1,'e','h'], [0,-1,'w','h'], [1,0,'s','v'], [-1,0,'n','v']].forEach(([dr, dc, dir, orient]) => {
-                            let nr = r+dr, nc = c+dc;
-                            if (nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE) {
-                                if(merged[nr*SIZE+nc] === 2 || isTargetDeadEnd(nr, nc)) {
-                                    const t = document.createElement('div');
-                                    const isTargetComplete = isTargetDeadEnd(nr, nc) || connectedToDeadEnd.has(nr*SIZE+nc);
-                                    const isTargetClump = clumps.has(nr*SIZE+nc);
-                                    t.className = `trace-line trace-${orient} trace-${dir} ${active ? '' : 'trace-dim'} ${isPathComplete && isTargetComplete ? 'trace-complete' : ''} ${isCellClump && isTargetClump ? 'trace-error' : ''}`;
-                                    cell.appendChild(t);
-                                }
-                            }
-                        });
-                    }
-                    
-                    if(lIdx > 0 && lIdx === currentIdx && i === layerStartIdxs[lIdx] && layer[i] !== 0) {
-                        const origin = document.createElement('div');
-                        origin.className = 'origin-indicator';
-                        cell.appendChild(origin);
+                        cell.appendChild(Object.assign(document.createElement('div'), {className: dotClass}));
                     }
                 });
             }
@@ -675,19 +549,11 @@
         }
 
         document.getElementById('gridSizeSelect').onchange = init;
-        document.getElementById('addLayerBtn').onclick = () => { if(currentIdx < 3) { layers.push(Array(SIZE*SIZE).fill(0)); layerStartIdxs.push(null); currentIdx++; update(); } };
-        document.getElementById('commitBtn').onclick = () => { if(currentIdx>0) { const cur = layers.pop(); layerStartIdxs.pop(); currentIdx--; cur.forEach((v, i) => { if(v !== 0) layers[currentIdx][i] = v; }); update(); } };
-        document.getElementById('discardBtn').onclick = () => { if(currentIdx>0) { layers.pop(); layerStartIdxs.pop(); currentIdx--; update(); } };
+        document.getElementById('addLayerBtn').onclick = () => { if(currentIdx < 3) { layers.push(Array(SIZE*SIZE).fill(0)); currentIdx++; update(); } };
+        document.getElementById('commitBtn').onclick = () => { if(currentIdx>0) { const cur = layers.pop(); currentIdx--; cur.forEach((v, i) => { if(v !== 0) layers[currentIdx][i] = v; }); update(); } };
+        document.getElementById('discardBtn').onclick = () => { if(currentIdx>0) { layers.pop(); currentIdx--; update(); } };
         document.getElementById('newMazeBtn').onclick = init;
-        document.getElementById('openHelpBtn').onclick = () => { document.getElementById('helpModal').style.display = 'flex'; };
-        document.getElementById('closeHelpBtn').onclick = () => { document.getElementById('helpModal').style.display = 'none'; };
-        document.getElementById('decryptBtn').onclick = () => {
-            showKey = !showKey;
-            document.getElementById('answerKeySection').style.display = showKey ? 'flex' : 'none';
-            if (showKey) {
-                document.getElementById('answerKeySection').scrollIntoView({ behavior: 'smooth' });
-            }
-        };
+        document.getElementById('decryptBtn').onclick = () => { showKey = !showKey; document.getElementById('answerKeySection').classList.toggle('hidden', !showKey); };
         window.onload = init;
     </script>
 </body>

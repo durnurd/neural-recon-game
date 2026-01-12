@@ -5,215 +5,273 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Neural Recon Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        :root {
-            --grid-size: 8;
-            --cell-size: min(10vw, 10vh, 65px); 
-            --mini-cell-size: 12px;
-            --neon-cyan: #00f3ff;
-            --neon-green: #00ff9f;
-            --neon-amber: #ffaa00;
-            --neon-magenta: #ff00ff;
-            --neon-red: #ff3366;
-            
-            --dim-trace: #444444;
-            --bg-black: #050506;
-            --wall-round: 2px;
-        }
-
-        html, body {
-            width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: hidden;
-            position: fixed; overscroll-behavior-y: contain; 
-            /* manipulation allows panning/scrolling but disables double-tap zoom */
-            touch-action: manipulation; 
-            user-select: none; -webkit-user-select: none;
-        }
-
-        body {
-            background-color: var(--bg-black);
-            color: #fff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-            display: flex; flex-direction: column; align-items: center; overflow-y: auto;
-        }
-
-        .header-strip {
-            width: 100%; background: #0f0f14; border-bottom: 2px solid rgba(0, 243, 255, 0.4);
-            padding: 8px 12px; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px;
-            position: sticky; top: 0; z-index: 100;
-        }
-
-        .cyber-btn {
-            background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(0, 243, 255, 0.6);
-            color: var(--neon-cyan); padding: 4px 10px; font-size: 10px; font-weight: 900;
-            text-transform: uppercase; letter-spacing: 1px; transition: 0.2s; border-radius: 2px;
-            touch-action: manipulation;
-        }
-        .cyber-btn:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 15px var(--neon-cyan); }
-        .cyber-btn:disabled { opacity: 0.1; cursor: not-allowed; border-color: #333; color: #555; }
-        .btn-action { border-color: var(--neon-green); color: var(--neon-green); }
-        .btn-kill { border-color: var(--neon-red); color: var(--neon-red); }
-
-        .size-select {
-            background: #000; color: var(--neon-cyan); border: 1px solid var(--neon-cyan);
-            font-size: 10px; padding: 2px 4px; border-radius: 2px;
-            touch-action: manipulation;
-        }
-
-        .grid-wrapper {
-            margin-top: 10px; display: inline-grid; grid-template-columns: auto auto; grid-template-rows: auto auto;
-            max-width: 98vw; padding: 10px; box-sizing: border-box; justify-content: center;
-            touch-action: none; /* The grid itself is strictly non-zoomable */
-        }
-
-        .cyber-grid {
-            display: grid; gap: 1px; background: rgba(0, 243, 255, 0.2); 
-            border: 2px solid rgba(0, 243, 255, 0.9); position: relative;
-        }
-
-        .cell {
-            width: var(--cell-size); height: var(--cell-size); background: var(--bg-black); 
-            position: relative; display: flex; align-items: center; justify-content: center; 
-            cursor: pointer; z-index: 5; touch-action: none;
-        }
-
-        /* Fork Anchor - Diamond Marker */
-        .fork-anchor {
-            position: absolute; width: 45%; height: 45%; 
-            border: 2px solid var(--neon-cyan);
-            outline: 1.5px solid #000;
-            transform: rotate(45deg); 
-            z-index: 150; 
-            pointer-events: none;
-            box-shadow: 0 0 10px var(--neon-cyan), inset 0 0 5px rgba(0,0,0,0.8);
-            animation: anchor-pulse 1.5s ease-in-out infinite;
-        }
-
-        /* Erratic cell state */
-        .cell-erratic { background: radial-gradient(circle, rgba(255, 0, 255, 0.15) 0%, transparent 70%); animation: cell-jitter 4s infinite; }
-
-        /* Neural Trace Lines */
-        .trace-line { position: absolute; background: #fff; z-index: 20; pointer-events: none; opacity: 0.4; transition: 0.2s; }
-        .trace-v { width: 2px; left: calc(50% - 1px); height: 100%; }
-        .trace-h { height: 2px; top: calc(50% - 1px); width: 100%; }
-        .trace-n { top: 0; height: 50%; } .trace-s { bottom: 0; height: 50%; } .trace-e { right: 0; width: 50%; } .trace-w { left: 0; width: 50%; }
-        
-        .trace-complete { background: var(--neon-green) !important; opacity: 0.8; box-shadow: 0 0 8px var(--neon-green); }
-        .trace-error { background: var(--neon-red) !important; box-shadow: 0 0 8px var(--neon-red) !important; opacity: 1; }
-        .trace-erratic { background: var(--neon-magenta) !important; box-shadow: 0 0 8px var(--neon-magenta) !important; opacity: 0.6; }
-
-        /* Path Markers */
-        .path-dot { width: 22%; height: 22%; background: white; border-radius: 50%; box-shadow: 0 0 8px white; z-index: 25; pointer-events: none; }
-        .path-dot-dim { background: #444 !important; box-shadow: none !important; }
-        .path-dot-complete { background: var(--neon-green) !important; box-shadow: 0 0 10px var(--neon-green) !important; }
-        .path-dot-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; animation: jitter-fast 0.1s infinite !important; }
-        .path-dot-erratic { background: var(--neon-magenta) !important; box-shadow: 0 0 15px var(--neon-magenta) !important; animation: jitter-fast 0.15s infinite !important; }
-
-        /* Dead End Nodes */
-        .node { 
-            position: relative; width: 44%; height: 44%; z-index: 50; background: #000;
-            border: 2px solid var(--neon-cyan); border-radius: 2px; box-shadow: 0 0 8px var(--neon-cyan);
-            display: flex; align-items: center; justify-content: center; pointer-events: none;
-        }
-        .node-core { width: 50%; height: 50%; background: var(--neon-cyan); animation: core-pulse 3s infinite; }
-        .node-complete { border-color: var(--neon-green) !important; box-shadow: 0 0 12px var(--neon-green) !important; }
-        .node-complete .node-core { background: var(--neon-green) !important; }
-        .node-conflict { border-color: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; animation: jitter-fast 0.08s infinite !important; }
-        .node-conflict .node-core { background: var(--neon-red) !important; }
-        .node-erratic { border-color: var(--neon-magenta) !important; box-shadow: 0 0 15px var(--neon-magenta) !important; animation: jitter-fast 0.12s infinite !important; }
-        .node-erratic .node-core { background: var(--neon-magenta) !important; animation: core-pulse-fast 0.5s infinite !important; }
-
-        /* Walls */
-        .wall { position: absolute; inset: 5%; z-index: 12; pointer-events: none; border-radius: var(--wall-round); }
-        .wall-l0 { background: var(--neon-cyan); box-shadow: 0 0 10px var(--neon-cyan); }
-        .wall-l1 { background: var(--neon-green); box-shadow: 0 0 10px var(--neon-green); }
-        .wall-l2 { background: var(--neon-amber); box-shadow: 0 0 10px var(--neon-amber); }
-        .wall-l3 { background: var(--neon-magenta); box-shadow: 0 0 10px var(--neon-magenta); }
-        .wall-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; z-index: 15; animation: err-pulse 1.5s ease-in-out infinite !important; }
-
-        /* Red X */
-        .invalid-box { 
-            position: absolute; inset: 8%; z-index: 100; pointer-events: none; 
-            display: flex; align-items: center; justify-content: center; 
-            border: 2px solid rgba(255, 51, 102, 0.15); border-radius: 4px;
-        }
-        .invalid-box-high {
-            background: rgba(255, 51, 102, 0.25); border: 2.5px solid var(--neon-red);
-            box-shadow: 0 0 20px rgba(255, 51, 102, 0.6); animation: jitter-fast 0.1s infinite;
-        }
-        .invalid-x { position: relative; width: 75%; height: 75%; opacity: 0.3; }
-        .invalid-box-high .invalid-x { opacity: 0.95; }
-        .invalid-x::before, .invalid-x::after { 
-            content: ''; position: absolute; width: 100%; height: 4px; 
-            background: var(--neon-red); top: 50%; left: 0; border-radius: 2px;
-            box-shadow: 0 0 8px var(--neon-red);
-        }
-        .invalid-x::before { transform: rotate(45deg); }
-        .invalid-x::after { transform: rotate(-45deg); }
-
-        /* Labels */
-        .count-neon { width: var(--cell-size); height: var(--cell-size); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 900; font-family: 'Courier New', monospace; color: #444; }
-        .count-ok { color: var(--neon-green); text-shadow: 0 0 15px var(--neon-green); }
-        .count-over { color: var(--neon-red); text-shadow: 0 0 15px var(--neon-red); }
-
-        .label-container-row { display: flex; flex-direction: column; gap: 1px; } 
-        .label-container-col { display: flex; gap: 1px; } 
-        
-        #victoryOverlay {
-            position: absolute; inset: 0; background: rgba(0,0,0,0.8);
-            z-index: 200; display: none; flex-direction: column; align-items: center; justify-content: center;
-            border: 4px solid var(--neon-green); box-shadow: inset 0 0 50px var(--neon-green); pointer-events: none;
-        }
-
-        #briefingOverlay {
-            position: fixed; inset: 0; background: rgba(5, 5, 6, 0.95);
-            z-index: 500; display: none; align-items: center; justify-content: center;
-            padding: 20px;
-        }
-        .briefing-modal {
-            max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto;
-            background: #0f0f14; border: 2px solid var(--neon-cyan);
-            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2); padding: 24px;
-            font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6;
-        }
-        .briefing-header { color: var(--neon-cyan); border-bottom: 1px solid var(--neon-cyan); margin-bottom: 16px; padding-bottom: 8px; font-weight: 900; letter-spacing: 2px; }
-        .briefing-section { margin-bottom: 12px; }
-        .briefing-section h3 { color: var(--neon-green); margin-bottom: 4px; text-transform: uppercase; }
-        .briefing-tag { color: var(--neon-amber); font-weight: bold; }
-
-        @keyframes anchor-pulse { 0%, 100% { opacity: 0.4; transform: rotate(45deg) scale(0.9); } 50% { opacity: 1; transform: rotate(45deg) scale(1.1); } }
-        @keyframes jitter-fast { 0% { transform: translate(1px, 1px); } 50% { transform: translate(-1px, -1px); } 100% { transform: translate(1px, 1px); } }
-        @keyframes cell-jitter { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; transform: scale(0.98); } }
-        @keyframes core-pulse { 0%, 100% { opacity: 0.4; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.1); } }
-        @keyframes core-pulse-fast { 0%, 100% { transform: scale(0.5); opacity: 0.3; } 50% { transform: scale(1.3); opacity: 1; } }
-        @keyframes err-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.12); opacity: 0.8; } }
-    </style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
     <div id="briefingOverlay">
         <div class="briefing-modal">
-            <div class="briefing-header">NEURAL_RECON_INIT_PROTOCOL v4.2</div>
-            <div class="briefing-section">
-                <h3>OBJECTIVE_LOG</h3>
-                <p>Isolate the <span class="briefing-tag">Primary Neural Path</span>. Legitimate signal transmissions must be differentiated from interference.</p>
+            <div class="briefing-header">Mission Briefing</div>
+
+            <div class="briefing-tabs">
+                <div class="briefing-tab active" data-tab="basics">How to Play</div>
+                <div class="briefing-tab" data-tab="tips">Pro Tips</div>
             </div>
-            <div class="briefing-section">
-                <h3>FIREWALL_CONSTRAINTS</h3>
-                <p>1. <span class="briefing-tag">GRID_MARGINS:</span> Edge numbers indicate mandatory firewall counts for that segment.</p>
-                <p>2. <span class="briefing-tag">SIGNAL_INTEGRITY:</span> Firewalls cannot be placed on valid signal traces.</p>
+
+            <div id="tab-basics" class="briefing-content active">
+                <div class="briefing-section">
+                    <h3>Goal</h3>
+                    <p>Find the hidden path through the grid by placing the missing walls.</p>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Rules</h3>
+                    <p>1. The <span class="briefing-tag">numbers</span> on each row/column show how many walls belong there.</p>
+                    <p>2. The path must be <span class="briefing-tag">continuous</span> — all path nodes and dead ends connect.</p>
+                    <p>3. <span class="briefing-tag">No 2×2 squares</span> of path nodes allowed (except inside a data vault).</p>
+                    <p>4. On larger grids, a <span class="briefing-tag">Data Stockpile</span> may appear inside a hidden 3×3 vault with a single door.</p>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Cell Types</h3>
+                    <div class="briefing-row">
+                        <span class="cell-icon cell-icon-wall"></span>
+                        <span class="briefing-row-label"><span class="briefing-tag">Wall Node</span> — Click once to place. Blocks the path. Fill in all walls to finish the puzzle.</span>
+                    </div>
+                    <div class="briefing-row">
+                        <span class="cell-icon cell-icon-path"></span>
+                        <span class="briefing-row-label"><span class="briefing-tag">Path Node</span> — Click twice to place. Marks where the path goes. It is not necessary to fill in all paths to finish the puzzle.</span>
+                    </div>
+                    <div class="briefing-row">
+                        <span class="cell-icon cell-icon-deadend"></span>
+                        <span class="briefing-row-label"><span class="briefing-tag">Dead End Node</span> — Fixed on the grid. The path must connect to each of these. Each dead end node must connect to exactly one path.</span>
+                    </div>
+                    <div class="briefing-row">
+                        <span class="cell-icon cell-icon-stockpile"></span>
+                        <span class="briefing-row-label"><span class="briefing-tag">Data Stockpile</span> — Located inside a 3×3 vault surrounded by walls with one door. Turns green when the vault is properly sealed.</span>
+                    </div>
+                </div>
+                
+                <div class="briefing-section">
+                    <h3>Controls</h3>
+                    <p>Use the <span class="briefing-tag">Mode</span> buttons to select what to draw:</p>
+                    <p><span class="briefing-tag">Wall</span> — Tap to place walls, tap walls to erase</p>
+                    <p><span class="briefing-tag">Path</span> — Tap to place paths, tap paths to erase</p>
+                    <p><span class="briefing-tag">Erase</span> — Tap any cell to clear it</p>
+                    <p><span class="briefing-tag">Auto</span> — Context-aware: tap empty for wall, tap wall for path, tap path to erase. Drag from dead end nodes or data stockpile nodes to draw paths. Tap on dead end nodes to auto-fill walls and paths when able.</p>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Layers (Advanced)</h3>
+                    <p>Use <span class="briefing-tag">Fork</span> to create a new layer for experimenting.</p>
+                    <p>Use <span class="briefing-tag">Commit</span> to merge your changes down, or <span class="briefing-tag">Abort</span> to discard.</p>
+                </div>
             </div>
-            <div class="briefing-section">
-                <h3>PATH_STABILITY</h3>
-                <p>1. <span class="briefing-tag">NON_BRANCHING:</span> Signal must be a continuous loop. No 2x2 clumping allowed.</p>
-                <p>2. <span class="briefing-tag">TERMINAL_NODES:</span> Nodes glow <span class="text-green-400">Green</span> when verified.</p>
+
+            <div id="tab-tips" class="briefing-content">
+                <div class="briefing-section">
+                    <h3>Tip 1: Tap Dead Ends with One Path or Three Walls</h3>
+                    <p>When a dead end already has one path neighbor, or three wall neighbors, tap it to auto-fill walls and paths around it.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(3, 24px);">
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-deadend"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The dead end already connects left. Tapping it fills the other 3 neighbors with walls automatically.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 2: Tap Green Numbers</h3>
+                    <p>When a row/column has the correct wall count (green number), tap it to fill remaining cells with path nodes.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <div class="tip-label" style="color: var(--neon-green); font-weight: bold;">2</div>
+                                <div class="tip-grid" style="grid-template-columns: repeat(4, 24px);">
+                                    <div class="tip-cell tip-cell-wall"></div>
+                                    <div class="tip-cell tip-cell-deduced"></div>
+                                    <div class="tip-cell tip-cell-wall"></div>
+                                    <div class="tip-cell tip-cell-deduced"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            This row needs 2 walls and already has 2. Tap the green "2" to fill empty cells with path nodes.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 3: Use Fork for Guessing</h3>
+                    <p>Stuck? Use <span class="briefing-tag">Fork</span> to try a guess. If it leads to a contradiction, <span class="briefing-tag">Abort</span> and try the opposite.</p>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 4: Data Vault Layout</h3>
+                    <p>On 6×6+ grids, look for a 3×3 vault with 11 walls around it and 1 door. The vault contains a <span class="briefing-tag">Data Stockpile</span> somewhere inside.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-stockpile"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The vault has 11 walls surrounding it with a single door. This example shows the door at the bottom, but it can be in any wall. The 3×3 interior is empty other than the data stockpile cell.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #333;">
+                    <h3 style="color: var(--neon-magenta);">Expert Tips</h3>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 5: Don't Create Unwanted Dead Ends</h3>
+                    <p>If a row needs only 1 more wall, it can't be placed where it would trap an empty cell with 3 walls.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="color: var(--neon-green); width: 16px;">2</div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                        <div class="tip-cell tip-cell-maybe" style="font-size:10px; color:#f88;">X</div>
+                                        <div class="tip-cell" style="font-size:9px; color:#888;">trap</div>
+                                        <div class="tip-cell tip-cell-wall"></div>
+                                        <div class="tip-cell"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="color: #888; width: 16px;">3</div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell tip-cell-wall"></div>
+                                        <div class="tip-cell tip-cell-maybe"></div>
+                                        <div class="tip-cell tip-cell-maybe"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The top row needs only 1 more wall. The wall cannot go at X since that would create a dead end with no dead end node. X must therefore be part of the path. The bottom row still needs 2 more walls, so this technique doesn't apply there.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 6: Avoid 2×2 Path Squares</h3>
+                    <p>If placing a path would create a 2×2 square of paths, that cell must be a wall.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(3, 24px);">
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            Three corners of a 2×2 are paths. The fourth <em>must</em> be a wall to avoid a 2×2 path square.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 7: Dead End with One Wall Left</h3>
+                    <p>If a row needs exactly 1 more wall and has a dead end with no walls on either side, deduce the perpendicular walls and the rest of the row.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="width: 16px;"></div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="color: #888; width: 16px;">1</div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                        <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                        <div class="tip-cell tip-cell-maybe" style="font-size:9px; color:#fa0;">X</div>
+                                        <div class="tip-cell tip-cell-deadend"></div>
+                                        <div class="tip-cell tip-cell-maybe" style="font-size:9px; color:#fa0;">X</div>
+                                        <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="width: 16px;"></div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            This row needs 1 wall. Since a dead end cell requires 3 walls, the row's only wall must be one of the two cells to the left or right of the dead end cell (X). Even though it cannot be deduced which of the two is the wall and which is part of the path, it is known that the two cells above and below must be walls, and also all other cells in the row are also part of the path.
+                        </div>
+                    </div>
+                </div>
             </div>
+
             <div class="mt-6 flex justify-center">
-                <button id="closeBriefingBtn" class="cyber-btn" style="padding: 10px 40px; font-size: 14px;">ACKNOWLEDGE</button>
+                <button id="closeBriefingBtn" class="cyber-btn" style="padding: 10px 40px; font-size: 14px;">Got It</button>
             </div>
         </div>
     </div>
 
     <div class="header-strip">
-        <button id="briefingBtn" class="cyber-btn" style="border-color: var(--neon-amber); color: var(--neon-amber);">Briefing</button>
+        <button id="soundToggleBtn" class="cyber-btn btn-sound" title="Toggle Sound">
+            <span id="soundIcon">🔊</span>
+        </button>
+        <button id="briefingBtn" class="cyber-btn btn-amber">Briefing</button>
         <select id="gridSizeSelect" class="size-select">
             <option value="4">4x4</option>
             <option value="5">5x5</option>
@@ -222,368 +280,76 @@
             <option value="8" selected>8x8</option>
         </select>
         <button id="newMazeBtn" class="cyber-btn">Initialize</button>
-        <button id="addLayerBtn" class="cyber-btn btn-action">Fork</button>
-        <button id="commitBtn" class="cyber-btn">Commit</button>
-        <button id="discardBtn" class="cyber-btn btn-kill">Abort</button>
-        <div class="px-3 border-l border-white/20">
-            <span id="layerName" class="text-[10px] uppercase font-black tracking-widest text-cyan-400">Root</span>
-        </div>
-    </div>
-
-    <div class="grid-wrapper">
-        <div></div><div id="colLabels" class="label-container-col"></div>
-        <div id="rowLabels" class="label-container-row"></div>
-        <div id="mainGrid" class="cyber-grid">
-            <div id="victoryOverlay">
-                <div class="text-neon-green font-black text-2xl tracking-tighter">NEURAL LINK RESTORED</div>
+        <button id="undoBtn" class="cyber-btn" disabled>Undo</button>
+        <div class="btn-group-nowrap">
+            <button id="addLayerBtn" class="cyber-btn btn-action">Fork</button>
+            <button id="commitBtn" class="cyber-btn">Commit</button>
+            <button id="discardBtn" class="cyber-btn btn-kill">Abort</button>
+            <div class="px-3 border-l border-white/20">
+                <span id="layerName" class="text-[10px] uppercase font-black tracking-widest text-cyan-400">Root</span>
             </div>
         </div>
     </div>
 
+    <div class="mode-strip">
+        <button id="modeWall" class="mode-btn" data-mode="wall">
+            <span class="mode-icon mode-icon-wall"></span>
+            <span>Wall</span>
+        </button>
+        <button id="modePath" class="mode-btn" data-mode="path">
+            <span class="mode-icon mode-icon-path"></span>
+            <span>Path</span>
+        </button>
+        <button id="modeErase" class="mode-btn" data-mode="erase">
+            <span class="mode-icon mode-icon-erase"></span>
+            <span>Erase</span>
+        </button>
+        <button id="modeSmart" class="mode-btn active" data-mode="smart">
+            <span class="mode-icon mode-icon-wall"></span>
+            <span class="mode-icon mode-icon-path"></span>
+            <span class="mode-icon mode-icon-erase"></span>
+            <span>Auto</span>
+        </button>
+    </div>
+
+    <div class="grid-wrapper">
+        <div></div><div id="colLabels" class="label-container-col"></div><div></div>
+        <div id="rowLabels" class="label-container-row"></div>
+        <div id="mainGrid" class="cyber-grid">
+            <div id="victoryOverlay">
+                <div class="scan-lines"></div>
+                <div class="victory-content">
+                    <div class="victory-title">NEURAL LINK RESTORED</div>
+                    <div id="technoBabble" class="techno-babble"></div>
+                    <div class="victory-stats">
+                        <div class="stat-row">
+                            <span class="stat-label">Sync Duration:</span>
+                            <span id="statTime" class="stat-value">00:00</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Node Operations:</span>
+                            <span id="statMoves" class="stat-value">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Consecutive Links:</span>
+                            <span id="statStreak" class="stat-value">1</span>
+                        </div>
+                    </div>
+                    <button id="nextLevelBtn" class="cyber-btn btn-action next-level-btn">Initialize Next Sequence</button>
+                </div>
+            </div>
+        </div>
+        <div class="grid-spacer"></div>
+    </div>
+
     <div class="p-4 flex flex-col items-center">
         <button id="decryptBtn" class="cyber-btn opacity-40">Toggle Decrypt Overlay</button>
-        <div id="answerKeySection" class="hidden flex-col items-center gap-3 p-4 border border-dashed border-amber-500/30 bg-amber-500/5">
+        <div id="answerKeySection" class="hidden flex flex-col items-center gap-3 p-4 mt-3 border border-dashed border-amber-500/30 bg-amber-500/5">
             <div id="miniGrid" class="grid gap-px bg-zinc-800 border border-zinc-700"></div>
         </div>
     </div>
 
-    <script>
-        // GLOBAL FIX: Prevent double-tap zoom via JS for environments that don't respect CSS 'manipulation'
-        document.addEventListener('dblclick', function(e) {
-            e.preventDefault();
-        }, { passive: false });
-
-        let SIZE = 8;
-        let solution = [];
-        let layers = [];
-        let currentIdx = 0;
-        let targets = { r: [], c: [] };
-        let forkAnchors = [null, null, null, null];
-        let isWon = false;
-        let showKey = false;
-        const colors = ["cyan", "green", "amber", "magenta"];
-
-        let isDragging = false;
-        let dragMode = null; 
-
-        function init() {
-            isWon = false;
-            document.getElementById('victoryOverlay').style.display = 'none';
-            SIZE = parseInt(document.getElementById('gridSizeSelect').value);
-            
-            let scaleFactor = (SIZE <= 4) ? 1.8 : (SIZE <= 6 ? 1.4 : 1.0);
-            document.documentElement.style.setProperty('--grid-size', SIZE);
-            document.documentElement.style.setProperty('--cell-size', `min(${10 * scaleFactor}vw, ${10 * scaleFactor}vh, 75px)`);
-            
-            solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
-            const start = {r: Math.floor(Math.random()*SIZE), c: Math.floor(Math.random()*SIZE)};
-            solution[start.r][start.c] = 0;
-            let stack = [start], visited = new Set([`${start.r},${start.c}`]);
-
-            while(stack.length > 0) {
-                const curr = stack[stack.length-1];
-                let neighbors = [];
-                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                    let nr=curr.r+dr, nc=curr.c+dc;
-                    if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && !visited.has(`${nr},${nc}`)) {
-                        let pn = 0;
-                        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([ddr,ddc])=>{
-                            let nnr=nr+ddr, nnc=nc+ddc;
-                            if(nnr>=0&&nnr<SIZE&&nnc>=0&&nnc<SIZE&&solution[nnr][nnc]===0) pn++;
-                        });
-                        if(pn === 1) neighbors.push({r:nr,c:nc});
-                    }
-                });
-                if(neighbors.length > 0) {
-                    let next = neighbors[Math.floor(Math.random()*neighbors.length)];
-                    solution[next.r][next.c] = 0;
-                    visited.add(`${next.r},${next.c}`);
-                    stack.push(next);
-                } else stack.pop();
-            }
-
-            targets.r = solution.map(row => row.filter(v => v === 1).length);
-            targets.c = Array(SIZE).fill(0).map((_, c) => solution.filter(r => r[c] === 1).length);
-            layers = [Array(SIZE * SIZE).fill(0)];
-            forkAnchors = [null, null, null, null];
-            currentIdx = 0;
-            render();
-            renderMiniMap();
-        }
-
-        function renderMiniMap() {
-            const mini = document.getElementById('miniGrid');
-            mini.innerHTML = '';
-            mini.style.gridTemplateColumns = `repeat(${SIZE}, var(--mini-cell-size))`;
-            for(let r=0; r<SIZE; r++) {
-                for(let c=0; c<SIZE; c++) {
-                    const div = document.createElement('div');
-                    div.style.width = 'var(--mini-cell-size)';
-                    div.style.height = 'var(--mini-cell-size)';
-                    div.className = solution[r][c] === 1 ? 'bg-amber-500' : 'bg-black';
-                    mini.appendChild(div);
-                }
-            }
-        }
-
-        function handleCellAction(idx) {
-            const r = Math.floor(idx / SIZE), c = idx % SIZE;
-            if (isWon || isTargetDeadEnd(r, c)) return;
-            for (let j = 0; j < currentIdx; j++) if (layers[j][idx] !== 0) return;
-
-            if (!isDragging) {
-                isDragging = true;
-                const currentVal = layers[currentIdx][idx];
-                dragMode = currentVal === 0 ? 1 : (currentVal === 1 ? 2 : 0);
-                if (currentIdx > 0 && forkAnchors[currentIdx] === null) {
-                    forkAnchors[currentIdx] = idx;
-                }
-                layers[currentIdx][idx] = dragMode;
-            } else {
-                layers[currentIdx][idx] = dragMode;
-            }
-            update();
-        }
-
-        function render() {
-            const gameB = document.getElementById('mainGrid');
-            const rowL = document.getElementById('rowLabels'), colL = document.getElementById('colLabels');
-            gameB.querySelectorAll('.cell').forEach(c => c.remove());
-            rowL.innerHTML = ''; colL.innerHTML = '';
-            gameB.style.gridTemplateColumns = `repeat(${SIZE}, var(--cell-size))`;
-            gameB.style.gridTemplateRows = `repeat(${SIZE}, var(--cell-size))`;
-            for(let i=0; i<SIZE; i++) {
-                rowL.innerHTML += `<div class="count-neon"></div>`;
-                colL.innerHTML += `<div class="count-neon"></div>`;
-            }
-            for(let i=0; i<SIZE*SIZE; i++) {
-                const gCell = document.createElement('div');
-                gCell.className = 'cell';
-                gCell.onpointerdown = (e) => { gCell.releasePointerCapture(e.pointerId); handleCellAction(i); };
-                gCell.onpointerenter = () => { if (isDragging) handleCellAction(i); };
-                gameB.appendChild(gCell);
-            }
-            window.onpointerup = () => { isDragging = false; dragMode = null; };
-            update();
-        }
-
-        function isTargetDeadEnd(r, c) {
-            if(solution[r][c] === 1) return false;
-            let walls = 0;
-            [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                let nr=r+dr, nc=c+dc;
-                if(nr<0||nr>=SIZE||nc<0||nc>=SIZE||solution[nr][nc] === 1) walls++;
-            });
-            return walls >= 3;
-        }
-
-        function getShortestPathBetween(merged, startIdx, endIdx) {
-            let queue = [[startIdx]];
-            let visited = new Set([startIdx]);
-            while (queue.length > 0) {
-                let path = queue.shift();
-                let curr = path[path.length - 1];
-                if (curr === endIdx) return path;
-                let r = Math.floor(curr / SIZE), c = curr % SIZE;
-                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                    let nr = r + dr, nc = c + dc;
-                    let nIdx = nr * SIZE + nc;
-                    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && !visited.has(nIdx)) {
-                        if (merged[nIdx] === 2 || isTargetDeadEnd(nr, nc)) {
-                            visited.add(nIdx);
-                            queue.push([...path, nIdx]);
-                        }
-                    }
-                });
-            }
-            return null;
-        }
-
-        function update() {
-            if (isWon) return;
-            const cells = document.getElementById('mainGrid').querySelectorAll('.cell');
-            const rl = document.getElementById('rowLabels').children;
-            const cl = document.getElementById('colLabels').children;
-            const merged = Array(SIZE*SIZE).fill(0);
-            layers.forEach(l => l.forEach((s, i) => { if(s === 1) merged[i] = 1; if(s === 2 && merged[i] !== 1) merged[i] = 2; }));
-
-            let allWallsCorrect = true;
-            for(let i=0; i<SIZE*SIZE; i++) {
-                const r = Math.floor(i/SIZE), c = i%SIZE;
-                if(solution[r][c] === 1 && merged[i] !== 1) allWallsCorrect = false;
-                if(merged[i] === 1 && solution[r][c] !== 1) allWallsCorrect = false;
-            }
-            if(allWallsCorrect) { isWon = true; document.getElementById('victoryOverlay').style.display = 'flex'; return; }
-
-            const rowTotals = Array(SIZE).fill(0), colTotals = Array(SIZE).fill(0);
-            for(let r=0; r<SIZE; r++) {
-                let s = 0; for(let c=0; c<SIZE; c++) if(merged[r*SIZE+c] === 1) s++;
-                rowTotals[r] = s; rl[r].innerText = targets.r[r];
-                rl[r].className = `count-neon ${s === targets.r[r] ? 'count-ok' : (s > targets.r[r] ? 'count-over' : '')}`;
-            }
-            for(let c=0; c<SIZE; c++) {
-                let s = 0; for(let r=0; r<SIZE; r++) if(merged[r*SIZE+c] === 1) s++;
-                colTotals[c] = s; cl[c].innerText = targets.c[c];
-                cl[c].className = `count-neon ${s === targets.c[c] ? 'count-ok' : (s > targets.c[c] ? 'count-over' : '')}`;
-            }
-
-            const subgraphMap = Array(SIZE * SIZE).fill(-1);
-            let subgraphs = [];
-            for (let i = 0; i < SIZE * SIZE; i++) {
-                if (merged[i] !== 1 && subgraphMap[i] === -1) {
-                    const currentGraph = [];
-                    const stack = [i]; subgraphMap[i] = subgraphs.length;
-                    while (stack.length > 0) {
-                        const curr = stack.pop(); currentGraph.push(curr);
-                        const r = Math.floor(curr/SIZE), c = curr % SIZE;
-                        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                            const nr = r + dr, nc = c + dc, nIdx = nr * SIZE + nc;
-                            if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && merged[nIdx] !== 1 && subgraphMap[nIdx] === -1) {
-                                subgraphMap[nIdx] = subgraphs.length; stack.push(nIdx);
-                            }
-                        });
-                    }
-                    subgraphs.push(currentGraph);
-                }
-            }
-
-            let primaryIdx = -1;
-            if (subgraphs.length > 0) {
-                let maxLen = -1;
-                subgraphs.forEach((g, idx) => { if(g.length > maxLen) { maxLen = g.length; primaryIdx = idx; } });
-            }
-            const erraticIndices = new Set();
-            subgraphs.forEach((g, idx) => { if (idx !== primaryIdx) g.forEach(i => erraticIndices.add(i)); });
-
-            const authenticatedIndices = new Set();
-            const authenticatedEdges = new Set();
-            const visitedNetwork = new Set();
-            for(let i=0; i<SIZE*SIZE; i++) {
-                if(merged[i] === 2 && !visitedNetwork.has(i)) {
-                    let cluster = [], deadEndsFound = [], stack = [i];
-                    visitedNetwork.add(i);
-                    while(stack.length > 0) {
-                        let idx = stack.pop(), cr = Math.floor(idx/SIZE), cc = idx%SIZE;
-                        cluster.push(idx);
-                        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                            let nr=cr+dr, nc=cc+dc;
-                            if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE) {
-                                let nIdx = nr*SIZE+nc;
-                                if(merged[nIdx] === 2 && !visitedNetwork.has(nIdx)) { visitedNetwork.add(nIdx); stack.push(nIdx); } 
-                                else if(isTargetDeadEnd(nr, nc)) { if(!deadEndsFound.includes(nIdx)) deadEndsFound.push(nIdx); }
-                            }
-                        });
-                    }
-                    if(deadEndsFound.length >= 2) {
-                        for(let start = 0; start < deadEndsFound.length; start++) {
-                            for(let end = start + 1; end < deadEndsFound.length; end++) {
-                                let path = getShortestPathBetween(merged, deadEndsFound[start], deadEndsFound[end]);
-                                if(path) {
-                                    path.forEach(nodeIdx => authenticatedIndices.add(nodeIdx));
-                                    for(let pIdx=0; pIdx < path.length - 1; pIdx++) {
-                                        let u = Math.min(path[pIdx], path[pIdx+1]);
-                                        let v = Math.max(path[pIdx], path[pIdx+1]);
-                                        authenticatedEdges.add(`${u}-${v}`);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            const clumps = new Set();
-            for (let r=0; r<SIZE-1; r++) {
-                for (let c=0; c<SIZE-1; c++) {
-                    let i = r*SIZE+c;
-                    if(merged[i]===2 && merged[i+1]===2 && merged[i+SIZE]===2 && merged[i+SIZE+1]===2) {
-                        clumps.add(i); clumps.add(i+1); clumps.add(i+SIZE); clumps.add(i+SIZE+1);
-                    }
-                }
-            }
-
-            for(let i=0; i<SIZE*SIZE; i++) {
-                const cell = cells[i], r = Math.floor(i/SIZE), c = i%SIZE;
-                cell.innerHTML = ''; cell.classList.remove('cell-erratic');
-                let playerWalls = 0, connectedToManualPath = 0;
-                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                    let nr=r+dr, nc=c+dc;
-                    if(nr<0||nr>=SIZE||nc<0||nc>=SIZE||merged[nr*SIZE+nc] === 1) playerWalls++;
-                    else if(merged[nr*SIZE+nc] === 2) connectedToManualPath++;
-                });
-                if (erraticIndices.has(i)) cell.classList.add('cell-erratic');
-
-                if (currentIdx > 0 && forkAnchors[currentIdx] === i) {
-                    const anchor = document.createElement('div');
-                    anchor.className = 'fork-anchor';
-                    anchor.style.borderColor = `var(--neon-${colors[currentIdx]})`;
-                    anchor.style.boxShadow = `0 0 10px var(--neon-${colors[currentIdx]})`;
-                    cell.appendChild(anchor);
-                }
-
-                if(isTargetDeadEnd(r, c)) {
-                    const node = document.createElement('div');
-                    let nodeClass = 'node';
-                    if (erraticIndices.has(i) || playerWalls === 4) nodeClass += ' node-erratic'; 
-                    else if (playerWalls === 3) nodeClass += ' node-complete'; 
-                    else if (connectedToManualPath >= 2) nodeClass += ' node-conflict'; 
-                    node.className = nodeClass;
-                    node.innerHTML = '<div class="node-core"></div>';
-                    cell.appendChild(node);
-                } else if(playerWalls >= 3 && merged[i] !== 1) {
-                    const box = document.createElement('div');
-                    box.className = 'invalid-box';
-                    if ((rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c]) || merged[i] === 2) box.classList.add('invalid-box-high');
-                    box.innerHTML = '<div class="invalid-x"></div>';
-                    cell.appendChild(box);
-                }
-
-                if (merged[i] !== 1) {
-                    if (merged[i] === 2 || isTargetDeadEnd(r, c)) {
-                        [[0,1,'e','h','trace-e'],[0,-1,'w','h','trace-w'],[1,0,'s','v','trace-s'],[-1,0,'n','v','trace-n']].forEach(([dr, dc, dir, orient, cls]) => {
-                            let nr=r+dr, nc=c+dc, nIdx = nr*SIZE+nc;
-                            if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && (merged[nIdx] === 2 || isTargetDeadEnd(nr, nc))) {
-                                const trace = document.createElement('div');
-                                trace.className = `trace-line trace-${orient} ${cls}`;
-                                let u = Math.min(i, nIdx), v = Math.max(i, nIdx);
-                                if (clumps.has(i) || clumps.has(nIdx)) trace.classList.add('trace-error');
-                                else if (erraticIndices.has(i)) trace.classList.add('trace-erratic');
-                                else if (authenticatedEdges.has(`${u}-${v}`)) trace.classList.add('trace-complete');
-                                cell.appendChild(trace);
-                            }
-                        });
-                    }
-                }
-
-                layers.forEach((layer, lIdx) => {
-                    if (layer[i] === 1) {
-                        cell.appendChild(Object.assign(document.createElement('div'), {className: `wall wall-l${lIdx} ${lIdx === currentIdx ? '' : 'opacity-40'} ${rowTotals[r]>targets.r[r] || colTotals[c]>targets.c[c] ? 'wall-error' : ''}`}));
-                    } else if (layer[i] === 2) {
-                        let dotClass = `path-dot ${lIdx === currentIdx ? '' : 'path-dot-dim'}`;
-                        if (clumps.has(i)) dotClass += ' path-dot-error';
-                        else if (erraticIndices.has(i)) dotClass += ' path-dot-erratic';
-                        else if (authenticatedIndices.has(i)) dotClass += ' path-dot-complete';
-                        cell.appendChild(Object.assign(document.createElement('div'), {className: dotClass}));
-                    }
-                });
-            }
-            document.getElementById('commitBtn').disabled = currentIdx === 0;
-            document.getElementById('discardBtn').disabled = currentIdx === 0;
-            document.getElementById('addLayerBtn').disabled = currentIdx >= 3;
-            document.getElementById('layerName').innerText = currentIdx === 0 ? "Root" : `Sub-${currentIdx}`;
-            document.getElementById('layerName').style.color = `var(--neon-${colors[currentIdx]})`;
-        }
-
-        document.getElementById('gridSizeSelect').onchange = init;
-        document.getElementById('addLayerBtn').onclick = () => { if(currentIdx < 3) { layers.push(Array(SIZE*SIZE).fill(0)); currentIdx++; forkAnchors[currentIdx] = null; update(); } };
-        document.getElementById('commitBtn').onclick = () => { if(currentIdx>0) { const cur = layers.pop(); currentIdx--; cur.forEach((v, i) => { if(v !== 0) layers[currentIdx][i] = v; }); update(); } };
-        document.getElementById('discardBtn').onclick = () => { if(currentIdx>0) { layers.pop(); currentIdx--; update(); } };
-        document.getElementById('newMazeBtn').onclick = init;
-        document.getElementById('decryptBtn').onclick = () => { showKey = !showKey; document.getElementById('answerKeySection').classList.toggle('hidden', !showKey); };
-        document.getElementById('briefingBtn').onclick = () => { document.getElementById('briefingOverlay').style.display = 'flex'; };
-        document.getElementById('closeBriefingBtn').onclick = () => { document.getElementById('briefingOverlay').style.display = 'none'; };
-        window.onload = init;
-    </script>
+    <script src="game.js"></script>
 </body>
 </html>
 

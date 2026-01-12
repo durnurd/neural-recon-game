@@ -324,34 +324,478 @@ function init(resetStreak = true) {
     renderMiniMap();
 }
 
-// DFS maze generation - creates long natural walls
+// A* pathfinding-based maze generation
 function generateMaze() {
-    solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
-    const start = {r: Math.floor(Math.random()*SIZE), c: Math.floor(Math.random()*SIZE)};
-    solution[start.r][start.c] = 0;
-    let stack = [start], visited = new Set([`${start.r},${start.c}`]);
-
-    while(stack.length > 0) {
-        const curr = stack[stack.length-1];
-        let neighbors = [];
-        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-            let nr=curr.r+dr, nc=curr.c+dc;
-            if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && !visited.has(`${nr},${nc}`)) {
-                let pn = 0;
-                [[0,1],[0,-1],[1,0],[-1,0]].forEach(([ddr,ddc])=>{
-                    let nnr=nr+ddr, nnc=nc+ddc;
-                    if(nnr>=0&&nnr<SIZE&&nnc>=0&&nnc<SIZE&&solution[nnr][nnc]===0) pn++;
-                });
-                if(pn === 1) neighbors.push({r:nr,c:nc});
+    // Try with decreasing number of paths until successful
+    for (let numPaths = SIZE - 2; numPaths >= 1; numPaths--) {
+        for (let fullAttempt = 0; fullAttempt < 10; fullAttempt++) {
+            if (tryGenerateMaze(numPaths)) {
+                return; // Success
             }
-        });
-        if(neighbors.length > 0) {
-            let next = neighbors[Math.floor(Math.random()*neighbors.length)];
-            solution[next.r][next.c] = 0;
-            visited.add(`${next.r},${next.c}`);
-            stack.push(next);
-        } else stack.pop();
+        }
     }
+    // Fallback: just carve a single path
+    solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
+    solution[0][0] = 0;
+}
+
+function tryGenerateMaze(numPaths) {
+    // Initialize grid: all walls (1)
+    solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
+
+    // Weight grid: tracks wall weights for A* pathfinding
+    // Infinity = impenetrable, 1.0 = normal wall, 0.4 = existing path
+    const weights = Array(SIZE).fill().map(() => Array(SIZE).fill(1.0));
+
+    // Track endpoints for later relaxation
+    const endpoints = [];
+
+    for (let pathIdx = 0; pathIdx < numPaths; pathIdx++) {
+        // Try up to 10 times to find valid start/end points
+        let pathSuccess = false;
+        let minDistance = Math.max(2, SIZE - pathIdx - 2); // Relax distance requirement on retries
+
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const start = findValidStartPoint(weights, minDistance > 2);
+            if (!start) {
+                minDistance = Math.max(2, minDistance - 1);
+                continue;
+            }
+
+            const end = findValidEndPoint(weights, start, minDistance);
+            if (!end) {
+                minDistance = Math.max(2, minDistance - 1);
+                continue;
+            }
+
+            // Try to carve path using A*
+            const path = aStarCarve(start, end, weights);
+            if (!path) {
+                minDistance = Math.max(2, minDistance - 1);
+                continue;
+            }
+
+            // Carve the path and update weights
+            carvePath(path, weights, start, end);
+            endpoints.push(start, end);
+            pathSuccess = true;
+            break;
+        }
+
+        if (!pathSuccess) {
+            return false; // Failed to carve this path
+        }
+    }
+
+    // Relax endpoint walls (change from infinite to 100 where safe)
+    relaxEndpointWalls(endpoints, weights);
+
+    // Connect disconnected subgraphs
+    if (!connectDisconnectedSubgraphs(weights)) {
+        return false;
+    }
+
+    return true;
+}
+
+// Find a valid start point: 3-4 orthogonal neighbors as walls, at least one non-impenetrable
+function findValidStartPoint(weights, requireFourWalls) {
+    const candidates = [];
+
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const wallInfo = countOrthogonalWalls(r, c, weights);
+
+            // Need 3 or 4 walls around it
+            if (wallInfo.wallCount < 3) continue;
+            if (requireFourWalls && wallInfo.wallCount < 4) continue;
+
+            // If surrounded by 4 walls, at least one must not be impenetrable
+            if (wallInfo.wallCount === 4 && wallInfo.penetrableCount === 0) continue;
+
+            candidates.push({r, c});
+        }
+    }
+
+    if (candidates.length === 0) return null;
+    return candidates[Math.floor(Math.random() * candidates.length)];
+}
+
+// Find a valid end point: distant from start, 3-4 walls around it
+function findValidEndPoint(weights, start, minDistance) {
+    const candidates = [];
+
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            // Check distance (Euclidean)
+            const dist = Math.sqrt((r - start.r) ** 2 + (c - start.c) ** 2);
+            if (dist < minDistance) continue;
+
+            const wallInfo = countOrthogonalWalls(r, c, weights);
+
+            // Need 3 or 4 walls around it
+            if (wallInfo.wallCount < 3) continue;
+
+            // If surrounded by 4 walls, at least one must not be impenetrable
+            if (wallInfo.wallCount === 4 && wallInfo.penetrableCount === 0) continue;
+
+            candidates.push({r, c, dist});
+        }
+    }
+
+    if (candidates.length === 0) return null;
+
+    // Prefer more distant points
+    candidates.sort((a, b) => b.dist - a.dist);
+    const topCandidates = candidates.slice(0, Math.max(1, Math.floor(candidates.length / 3)));
+    return topCandidates[Math.floor(Math.random() * topCandidates.length)];
+}
+
+// Count orthogonal walls around a cell
+function countOrthogonalWalls(r, c, weights) {
+    let wallCount = 0;
+    let penetrableCount = 0;
+
+    for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
+            wallCount++; // Grid edge counts as impenetrable wall
+        } else if (solution[nr][nc] === 1) {
+            wallCount++;
+            if (weights[nr][nc] !== Infinity) {
+                penetrableCount++;
+            }
+        }
+    }
+
+    return {wallCount, penetrableCount};
+}
+
+// A* pathfinding to carve through the maze
+function aStarCarve(start, end, weights) {
+    const openSet = new MinHeap();
+    const gScore = Array(SIZE).fill().map(() => Array(SIZE).fill(Infinity));
+    const fScore = Array(SIZE).fill().map(() => Array(SIZE).fill(Infinity));
+    const cameFrom = Array(SIZE).fill().map(() => Array(SIZE).fill(null));
+    const prevDir = Array(SIZE).fill().map(() => Array(SIZE).fill(null));
+
+    gScore[start.r][start.c] = 0;
+    fScore[start.r][start.c] = euclideanDist(start, end);
+    openSet.push({r: start.r, c: start.c, f: fScore[start.r][start.c]});
+
+    const visited = new Set();
+
+    while (!openSet.isEmpty()) {
+        const current = openSet.pop();
+        const key = `${current.r},${current.c}`;
+
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        if (current.r === end.r && current.c === end.c) {
+            // Reconstruct path
+            const path = [];
+            let curr = {r: end.r, c: end.c};
+            while (curr) {
+                path.unshift(curr);
+                curr = cameFrom[curr.r][curr.c];
+            }
+            return path;
+        }
+
+        for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+            const nr = current.r + dr, nc = current.c + dc;
+            if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+
+            // Skip impenetrable walls
+            if (weights[nr][nc] === Infinity) continue;
+
+            // Calculate movement cost
+            let moveCost;
+            if (solution[nr][nc] === 0) {
+                moveCost = 0.4; // Existing path
+            } else {
+                moveCost = weights[nr][nc]; // Wall (1.0 or other weight)
+            }
+
+            // Add turn penalty to favor straight lines
+            const currentDir = `${dr},${dc}`;
+            const previousDir = prevDir[current.r][current.c];
+            if (previousDir !== null && previousDir !== currentDir) {
+                moveCost += 0.001; // Small penalty for turning
+            }
+
+            const tentativeG = gScore[current.r][current.c] + moveCost;
+
+            if (tentativeG < gScore[nr][nc]) {
+                cameFrom[nr][nc] = {r: current.r, c: current.c};
+                prevDir[nr][nc] = currentDir;
+                gScore[nr][nc] = tentativeG;
+                fScore[nr][nc] = tentativeG + euclideanDist({r: nr, c: nc}, end);
+                openSet.push({r: nr, c: nc, f: fScore[nr][nc]});
+            }
+        }
+    }
+
+    return null; // No path found
+}
+
+function euclideanDist(a, b) {
+    return Math.sqrt((a.r - b.r) ** 2 + (a.c - b.c) ** 2);
+}
+
+// Simple min-heap for A*
+class MinHeap {
+    constructor() { this.data = []; }
+    push(item) {
+        this.data.push(item);
+        this.bubbleUp(this.data.length - 1);
+    }
+    pop() {
+        if (this.data.length === 0) return null;
+        const result = this.data[0];
+        const last = this.data.pop();
+        if (this.data.length > 0) {
+            this.data[0] = last;
+            this.bubbleDown(0);
+        }
+        return result;
+    }
+    isEmpty() { return this.data.length === 0; }
+    bubbleUp(i) {
+        while (i > 0) {
+            const parent = Math.floor((i - 1) / 2);
+            if (this.data[parent].f <= this.data[i].f) break;
+            [this.data[parent], this.data[i]] = [this.data[i], this.data[parent]];
+            i = parent;
+        }
+    }
+    bubbleDown(i) {
+        while (true) {
+            const left = 2 * i + 1, right = 2 * i + 2;
+            let smallest = i;
+            if (left < this.data.length && this.data[left].f < this.data[smallest].f) smallest = left;
+            if (right < this.data.length && this.data[right].f < this.data[smallest].f) smallest = right;
+            if (smallest === i) break;
+            [this.data[smallest], this.data[i]] = [this.data[i], this.data[smallest]];
+            i = smallest;
+        }
+    }
+}
+
+// Carve the path and update weights
+function carvePath(path, weights, start, end) {
+    // Mark remaining 3 walls around start as impenetrable (after first step)
+    const startNeighbors = getOrthogonalNeighbors(start.r, start.c);
+
+    for (let i = 0; i < path.length; i++) {
+        const {r, c} = path[i];
+
+        // Carve this cell
+        solution[r][c] = 0;
+        weights[r][c] = 0.4; // Now it's a path
+
+        // After first step, mark remaining walls around start as impenetrable
+        if (i === 1) {
+            for (const {nr, nc} of startNeighbors) {
+                if (solution[nr][nc] === 1) {
+                    weights[nr][nc] = Infinity;
+                }
+            }
+        }
+
+        // Check for 2x2 prevention: if this cell creates a 2x2 with 3 open cells,
+        // mark the 4th as highly impenetrable
+        check2x2Prevention(r, c, weights);
+    }
+
+    // Mark remaining 3 walls around end as impenetrable
+    const endNeighbors = getOrthogonalNeighbors(end.r, end.c);
+    for (const {nr, nc} of endNeighbors) {
+        if (solution[nr][nc] === 1) {
+            weights[nr][nc] = Infinity;
+        }
+    }
+}
+
+function getOrthogonalNeighbors(r, c) {
+    const neighbors = [];
+    for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+            neighbors.push({nr, nc});
+        }
+    }
+    return neighbors;
+}
+
+// Check all 2x2 areas containing this cell; if 3 are open, mark 4th as impenetrable
+function check2x2Prevention(r, c, weights) {
+    // Check all 4 possible 2x2 squares that include (r, c)
+    const offsets = [[0, 0], [0, -1], [-1, 0], [-1, -1]];
+
+    for (const [dr, dc] of offsets) {
+        const topR = r + dr, topC = c + dc;
+        if (topR < 0 || topR + 1 >= SIZE || topC < 0 || topC + 1 >= SIZE) continue;
+
+        const cells = [
+            {r: topR, c: topC},
+            {r: topR, c: topC + 1},
+            {r: topR + 1, c: topC},
+            {r: topR + 1, c: topC + 1}
+        ];
+
+        let openCount = 0;
+        let wallCell = null;
+
+        for (const cell of cells) {
+            if (solution[cell.r][cell.c] === 0) {
+                openCount++;
+            } else {
+                wallCell = cell;
+            }
+        }
+
+        // If 3 cells are open and 1 is a wall, mark that wall as impenetrable
+        if (openCount === 3 && wallCell) {
+            weights[wallCell.r][wallCell.c] = Infinity;
+        }
+    }
+}
+
+// Relax endpoint walls: change from infinite to 100 where it won't create 2x2 open areas
+function relaxEndpointWalls(endpoints, weights) {
+    for (const endpoint of endpoints) {
+        const neighbors = getOrthogonalNeighbors(endpoint.r, endpoint.c);
+
+        for (const {nr, nc} of neighbors) {
+            if (solution[nr][nc] === 1 && weights[nr][nc] === Infinity) {
+                // Check if carving this wall would create a 2x2 open area
+                if (!wouldCreate2x2Open(nr, nc)) {
+                    weights[nr][nc] = 100;
+                }
+            }
+        }
+    }
+}
+
+// Check if carving a wall at (r, c) would create a 2x2 open area
+function wouldCreate2x2Open(r, c) {
+    // Temporarily mark as open
+    solution[r][c] = 0;
+
+    // Check all 4 possible 2x2 squares that include (r, c)
+    const offsets = [[0, 0], [0, -1], [-1, 0], [-1, -1]];
+    let creates2x2 = false;
+
+    for (const [dr, dc] of offsets) {
+        const topR = r + dr, topC = c + dc;
+        if (topR < 0 || topR + 1 >= SIZE || topC < 0 || topC + 1 >= SIZE) continue;
+
+        if (solution[topR][topC] === 0 &&
+            solution[topR][topC + 1] === 0 &&
+            solution[topR + 1][topC] === 0 &&
+            solution[topR + 1][topC + 1] === 0) {
+            creates2x2 = true;
+            break;
+        }
+    }
+
+    // Restore
+    solution[r][c] = 1;
+    return creates2x2;
+}
+
+// Connect disconnected subgraphs
+function connectDisconnectedSubgraphs(weights) {
+    const components = findConnectedComponents();
+
+    if (components.length <= 1) return true; // Already connected
+
+    // Sort by size, largest first
+    components.sort((a, b) => b.length - a.length);
+
+    // Try to connect each smaller component to the main one
+    const mainComponent = new Set(components[0].map(p => `${p.r},${p.c}`));
+
+    for (let i = 1; i < components.length; i++) {
+        const other = components[i];
+
+        // Pick a random point from the smaller component
+        const startPoint = other[Math.floor(Math.random() * other.length)];
+
+        // Find closest point in main component
+        let closestPoint = null;
+        let closestDist = Infinity;
+
+        for (const key of mainComponent) {
+            const [r, c] = key.split(',').map(Number);
+            const dist = euclideanDist(startPoint, {r, c});
+            if (dist < closestDist) {
+                closestDist = dist;
+                closestPoint = {r, c};
+            }
+        }
+
+        if (!closestPoint) return false;
+
+        // Use A* to carve a path between them
+        const path = aStarCarve(startPoint, closestPoint, weights);
+        if (!path) return false;
+
+        // Carve the connecting path
+        for (const {r, c} of path) {
+            solution[r][c] = 0;
+            weights[r][c] = 0.4;
+            // Check 2x2 prevention
+            check2x2Prevention(r, c, weights);
+        }
+
+        // Add other component to main
+        for (const p of other) {
+            mainComponent.add(`${p.r},${p.c}`);
+        }
+        // Add path cells to main
+        for (const p of path) {
+            mainComponent.add(`${p.r},${p.c}`);
+        }
+    }
+
+    return true;
+}
+
+// Find connected components of open cells
+function findConnectedComponents() {
+    const visited = Array(SIZE).fill().map(() => Array(SIZE).fill(false));
+    const components = [];
+
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            if (solution[r][c] === 0 && !visited[r][c]) {
+                const component = [];
+                const stack = [{r, c}];
+                visited[r][c] = true;
+
+                while (stack.length > 0) {
+                    const curr = stack.pop();
+                    component.push(curr);
+
+                    for (const [dr, dc] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+                        const nr = curr.r + dr, nc = curr.c + dc;
+                        if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE &&
+                            solution[nr][nc] === 0 && !visited[nr][nc]) {
+                            visited[nr][nc] = true;
+                            stack.push({r: nr, c: nc});
+                        }
+                    }
+                }
+
+                components.push(component);
+            }
+        }
+    }
+
+    return components;
 }
 
 // Ensure no row or column is entirely walls (SIZE walls)

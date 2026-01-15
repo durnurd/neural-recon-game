@@ -317,6 +317,7 @@
                 <span id="layerName" class="layer-name">Root</span>
             </div>
         </div>
+        <button id="statsBtn" class="cyber-btn" title="Player Stats">Stats</button>
     </div>
 
     <div class="mode-strip">
@@ -376,6 +377,45 @@
             <div id="miniGrid" class="mini-grid"></div>
         </div>
     </div>
+
+    <!-- Stats Dialog -->
+    <div id="statsOverlay" class="stats-overlay">
+        <div class="stats-modal">
+            <div class="stats-title">OPERATOR METRICS</div>
+            <div class="stats-content">
+                <div class="stat-row">
+                    <span class="stat-label">Total Puzzles Solved:</span>
+                    <span id="statTotalWins" class="stat-value">0</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Time Played:</span>
+                    <span id="statTotalTime" class="stat-value">00:00:00</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Total Moves:</span>
+                    <span id="statTotalMoves" class="stat-value">0</span>
+                </div>
+                <div class="stats-section-title">By Grid Size</div>
+                <div id="statsBySize" class="stats-by-size"></div>
+            </div>
+            <div class="stats-buttons">
+                <button id="statsCloseBtn" class="cyber-btn">Dismiss</button>
+                <button id="statsClearBtn" class="cyber-btn btn-kill">Clear Stats</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Clear Stats Confirm Dialog -->
+    <dialog id="clearStatsDialog" class="confirm-dialog">
+        <div class="confirm-dialog-content">
+            <div class="confirm-dialog-title">CONFIRM DATA PURGE</div>
+            <p class="confirm-dialog-message">Clear all operator metrics? This action cannot be undone.</p>
+            <div class="confirm-dialog-buttons">
+                <button id="clearStatsCancelBtn" class="cyber-btn">Cancel</button>
+                <button id="clearStatsConfirmBtn" class="cyber-btn btn-kill">Clear Stats</button>
+            </div>
+        </div>
+    </dialog>
 
     <!-- Theme System -->
     <script src="themes/theme-base.js"></script>

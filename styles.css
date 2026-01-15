@@ -420,6 +420,113 @@ body {
     pointer-events: auto; cursor: pointer;
 }
 
+/* Stats Overlay */
+.stats-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.9);
+    z-index: 300; display: none; align-items: center; justify-content: center;
+}
+.stats-overlay.visible { display: flex; animation: victory-fade-in 0.3s ease-out; }
+
+.stats-modal {
+    background: rgba(5, 5, 6, 0.95);
+    border: 2px solid var(--neon-cyan);
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.3), inset 0 0 20px rgba(0, 243, 255, 0.1);
+    padding: 24px 32px;
+    max-width: 400px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.stats-title {
+    font-size: 1.3rem; font-weight: 900; color: var(--neon-cyan);
+    text-shadow: 0 0 20px var(--neon-cyan);
+    letter-spacing: 3px; margin-bottom: 20px; text-align: center;
+    font-family: var(--font-heading, 'Courier New', monospace);
+}
+
+.stats-content {
+    font-family: var(--font-mono, 'Courier New', monospace); font-size: 12px;
+    color: #aaa; text-align: left; padding: 15px 20px;
+    background: rgba(0, 243, 255, 0.05); border: 1px solid rgba(0, 243, 255, 0.3);
+}
+
+.stats-section-title {
+    color: var(--neon-amber); font-size: 11px; text-transform: uppercase;
+    letter-spacing: 2px; margin-top: 16px; margin-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 170, 0, 0.3); padding-bottom: 4px;
+}
+
+.stats-by-size {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+    margin-top: 8px;
+}
+
+.size-stat {
+    text-align: center; padding: 6px 2px;
+    background: rgba(0, 243, 255, 0.05);
+    border: 1px solid rgba(0, 243, 255, 0.2);
+}
+
+.size-stat-header {
+    color: var(--neon-cyan); font-size: 10px; font-weight: bold;
+    margin-bottom: 4px; border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+    padding-bottom: 2px;
+}
+
+.size-stat-row {
+    display: flex; justify-content: space-between; font-size: 9px;
+    margin: 2px 0; padding: 0 2px;
+}
+
+.size-stat-row .stat-label { color: #888; }
+.size-stat-row .stat-value { color: var(--neon-green); }
+
+.stats-buttons {
+    display: flex; gap: 12px; justify-content: center; margin-top: 20px;
+}
+
+.stats-buttons .cyber-btn {
+    padding: 8px 20px; font-size: 11px;
+}
+
+/* Confirm Dialog */
+.confirm-dialog {
+    background: rgba(5, 5, 6, 0.98);
+    border: 2px solid var(--neon-red);
+    box-shadow: 0 0 30px rgba(255, 0, 64, 0.4);
+    padding: 0; max-width: 350px;
+}
+
+.confirm-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.confirm-dialog-content {
+    padding: 24px;
+}
+
+.confirm-dialog-title {
+    font-size: 1.1rem; font-weight: 900; color: var(--neon-red);
+    text-shadow: 0 0 15px var(--neon-red);
+    letter-spacing: 2px; margin-bottom: 16px; text-align: center;
+    font-family: var(--font-heading, 'Courier New', monospace);
+}
+
+.confirm-dialog-message {
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: 12px; color: #aaa; text-align: center;
+    margin-bottom: 20px;
+}
+
+.confirm-dialog-buttons {
+    display: flex; gap: 12px; justify-content: center;
+}
+
+.confirm-dialog-buttons .cyber-btn {
+    padding: 8px 20px; font-size: 11px;
+}
+
 .scan-lines {
     position: absolute; inset: 0; z-index: 1; pointer-events: none;
     background: repeating-linear-gradient(

@@ -490,6 +490,107 @@ let gameStartTime = null;
 let moveCount = 0;
 let winStreak = 0;
 
+// ============================================
+// PERSISTENT PLAYER STATS (Cookie-based)
+// ============================================
+const PlayerStats = (() => {
+    const COOKIE_NAME = 'neuralReconStats';
+    const COOKIE_DAYS = 365 * 5; // 5 years
+
+    const defaultStats = {
+        totalWins: 0,
+        totalTimePlayed: 0,  // milliseconds
+        totalMoves: 0,
+        bySize: {}           // { "4": {wins, bestStreak, fastestTime, fewestMoves}, ... }
+    };
+
+    function setCookie(name, value, days) {
+        const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
+        document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; expires=${expires}; path=/; SameSite=Lax`;
+    }
+
+    function getCookie(name) {
+        const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        if (match) {
+            try {
+                return JSON.parse(decodeURIComponent(match[2]));
+            } catch (e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    function load() {
+        const saved = getCookie(COOKIE_NAME);
+        if (saved) {
+            // Merge with defaults to handle new fields
+            return { ...defaultStats, ...saved };
+        }
+        return { ...defaultStats };
+    }
+
+    function save(stats) {
+        setCookie(COOKIE_NAME, stats, COOKIE_DAYS);
+    }
+
+    let stats = load();
+
+    return {
+        get: () => ({ ...stats }),
+
+        recordWin: (gridSize, timeMs, moves, streak) => {
+            stats.totalWins++;
+            stats.totalTimePlayed += timeMs;
+            stats.totalMoves += moves;
+
+            // Track by size (all records are per-size now)
+            const sizeKey = String(gridSize);
+            if (!stats.bySize[sizeKey]) {
+                stats.bySize[sizeKey] = { wins: 0, bestStreak: 0, fastestTime: null, fewestMoves: null };
+            }
+            stats.bySize[sizeKey].wins++;
+
+            if (streak > stats.bySize[sizeKey].bestStreak) {
+                stats.bySize[sizeKey].bestStreak = streak;
+            }
+            if (stats.bySize[sizeKey].fastestTime === null || timeMs < stats.bySize[sizeKey].fastestTime) {
+                stats.bySize[sizeKey].fastestTime = timeMs;
+            }
+            if (stats.bySize[sizeKey].fewestMoves === null || moves < stats.bySize[sizeKey].fewestMoves) {
+                stats.bySize[sizeKey].fewestMoves = moves;
+            }
+
+            save(stats);
+        },
+
+        clear: () => {
+            stats = { ...defaultStats, bySize: {} };
+            save(stats);
+        },
+
+        formatTime: (ms) => {
+            if (ms === null) return '--';
+            const totalSeconds = Math.floor(ms / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            if (hours > 0) {
+                return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+            return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        },
+
+        formatTotalTime: (ms) => {
+            const totalSeconds = Math.floor(ms / 1000);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+    };
+})();
+
 // Flavor text generator - uses theme if available, falls back to cyberpunk defaults
 const defaultBabble = {
     prefixes: ['Quantum', 'Neural', 'Synaptic', 'Crypto', 'Hyper', 'Meta', 'Nano', 'Cyber', 'Proto', 'Flux'],
@@ -1749,6 +1850,11 @@ function handleCellAction(idx) {
     }
 }
 
+// Helper to check if a cell is a fixed path (dead end or stockpile)
+function isFixedPath(r, c) {
+    return isTargetDeadEnd(r, c) || (stockpilePos && stockpilePos.r === r && stockpilePos.c === c);
+}
+
 function handleLabelClick(isRow, index) {
     if (isWon) return;
 
@@ -1764,7 +1870,7 @@ function handleLabelClick(isRow, index) {
         const idx = isRow ? index * SIZE + i : i * SIZE + index;
         const r = Math.floor(idx / SIZE), c = idx % SIZE;
         if (merged[idx] === 1) wallCount++;
-        else if (merged[idx] === 2 || isTargetDeadEnd(r, c)) pathCount++;
+        else if (merged[idx] === 2 || isFixedPath(r, c)) pathCount++;
     }
 
     const wallsComplete = wallCount === target;
@@ -1781,7 +1887,7 @@ function handleLabelClick(isRow, index) {
     for (let i = 0; i < SIZE; i++) {
         const idx = isRow ? index * SIZE + i : i * SIZE + index;
         const r = Math.floor(idx / SIZE), c = idx % SIZE;
-        if (merged[idx] === 0 && !isTargetDeadEnd(r, c)) {
+        if (merged[idx] === 0 && !isFixedPath(r, c)) {
             let locked = false;
             for (let j = 0; j < currentIdx; j++) if (layers[j][idx] !== 0) locked = true;
             if (!locked) hasEmpty = true;
@@ -1802,7 +1908,7 @@ function handleLabelClick(isRow, index) {
         const idx = isRow ? index * SIZE + i : i * SIZE + index;
         const r = Math.floor(idx / SIZE), c = idx % SIZE;
 
-        if (merged[idx] === 0 && !isTargetDeadEnd(r, c)) {
+        if (merged[idx] === 0 && !isFixedPath(r, c)) {
             // Check if locked by lower layer
             let locked = false;
             for (let j = 0; j < currentIdx; j++) if (layers[j][idx] !== 0) locked = true;
@@ -1927,8 +2033,8 @@ function update() {
         for(let c=0; c<SIZE; c++) {
             const idx = r*SIZE+c;
             if(merged[idx] === 1) wallCount++;
-            // Count paths and dead ends (which are effectively paths)
-            else if(merged[idx] === 2 || isTargetDeadEnd(r, c)) pathCount++;
+            // Count paths, dead ends, and stockpile (which are effectively paths)
+            else if(merged[idx] === 2 || isFixedPath(r, c)) pathCount++;
         }
         rowTotals[r] = wallCount;
         rowPathTotals[r] = pathCount;
@@ -1948,8 +2054,8 @@ function update() {
         for(let r=0; r<SIZE; r++) {
             const idx = r*SIZE+c;
             if(merged[idx] === 1) wallCount++;
-            // Count paths and dead ends (which are effectively paths)
-            else if(merged[idx] === 2 || isTargetDeadEnd(r, c)) pathCount++;
+            // Count paths, dead ends, and stockpile (which are effectively paths)
+            else if(merged[idx] === 2 || isFixedPath(r, c)) pathCount++;
         }
         colTotals[c] = wallCount;
         colPathTotals[c] = pathCount;
@@ -2502,6 +2608,9 @@ function triggerVictorySequence() {
             document.getElementById('statMoves').textContent = moveCount;
             document.getElementById('statStreak').textContent = winStreak;
 
+            // Record persistent stats
+            PlayerStats.recordWin(SIZE, elapsed, moveCount, winStreak);
+
             // Generate techno-babble
             document.getElementById('technoBabble').textContent = generateTechnoBabble();
 
@@ -2598,6 +2707,79 @@ document.getElementById('musicToggleBtn').onclick = () => {
         btn.classList.remove('muted');
         icon.textContent = '🎶';
         btn.title = 'Stop Music';
+    }
+};
+
+// Stats dialog
+function updateStatsDisplay() {
+    const stats = PlayerStats.get();
+    document.getElementById('statTotalWins').textContent = stats.totalWins;
+    document.getElementById('statTotalTime').textContent = PlayerStats.formatTotalTime(stats.totalTimePlayed);
+    document.getElementById('statTotalMoves').textContent = stats.totalMoves;
+
+    // By size stats with all per-size records
+    const bySizeContainer = document.getElementById('statsBySize');
+    bySizeContainer.innerHTML = '';
+    for (let size = 4; size <= 8; size++) {
+        const sizeStats = stats.bySize[String(size)] || { wins: 0, bestStreak: 0, fastestTime: null, fewestMoves: null };
+        const div = document.createElement('div');
+        div.className = 'size-stat';
+        div.innerHTML = `
+            <div class="size-stat-header">${size}×${size}</div>
+            <div class="size-stat-row"><span class="stat-label">Wins</span><span class="stat-value">${sizeStats.wins}</span></div>
+            <div class="size-stat-row"><span class="stat-label">Streak</span><span class="stat-value">${sizeStats.bestStreak}</span></div>
+            <div class="size-stat-row"><span class="stat-label">Best</span><span class="stat-value">${PlayerStats.formatTime(sizeStats.fastestTime)}</span></div>
+            <div class="size-stat-row"><span class="stat-label">Moves</span><span class="stat-value">${sizeStats.fewestMoves !== null ? sizeStats.fewestMoves : '--'}</span></div>
+        `;
+        bySizeContainer.appendChild(div);
+    }
+}
+
+document.getElementById('statsBtn').onclick = () => {
+    ChipSound.click();
+    updateStatsDisplay();
+    document.getElementById('statsOverlay').classList.add('visible');
+};
+
+document.getElementById('statsCloseBtn').onclick = () => {
+    ChipSound.click();
+    document.getElementById('statsOverlay').classList.remove('visible');
+};
+
+// Clear stats with dialog confirmation
+const clearStatsDialog = document.getElementById('clearStatsDialog');
+
+document.getElementById('statsClearBtn').onclick = () => {
+    ChipSound.click();
+    clearStatsDialog.showModal();
+};
+
+document.getElementById('clearStatsCancelBtn').onclick = () => {
+    ChipSound.click();
+    clearStatsDialog.close();
+};
+
+document.getElementById('clearStatsConfirmBtn').onclick = () => {
+    ChipSound.click();
+    PlayerStats.clear();
+    winStreak = 0; // Reset current streak too
+    updateStatsDisplay();
+    clearStatsDialog.close();
+};
+
+// Close dialog when clicking backdrop
+clearStatsDialog.addEventListener('click', (e) => {
+    if (e.target === clearStatsDialog) {
+        ChipSound.click();
+        clearStatsDialog.close();
+    }
+});
+
+// Close stats overlay when clicking outside
+document.getElementById('statsOverlay').onclick = (e) => {
+    if (e.target.id === 'statsOverlay') {
+        ChipSound.click();
+        document.getElementById('statsOverlay').classList.remove('visible');
     }
 };
 

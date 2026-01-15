@@ -2818,6 +2818,11 @@ document.querySelectorAll('.stats-tab').forEach(tab => {
 
 document.getElementById('statsBtn').onclick = () => {
     ChipSound.click();
+    // Set active tab to current puzzle size
+    currentStatsSize = SIZE;
+    document.querySelectorAll('.stats-tab').forEach(t => {
+        t.classList.toggle('active', parseInt(t.dataset.size) === SIZE);
+    });
     updateStatsDisplay();
     document.getElementById('statsOverlay').classList.add('visible');
 };

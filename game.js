@@ -651,7 +651,6 @@ function init(resetStreak = true) {
     document.getElementById('undoBtn').disabled = true;
     updateButtonStates();
     render();
-    renderMiniMap();
 }
 
 // Choose maze generation algorithm randomly (50/50)
@@ -1537,25 +1536,6 @@ function has2x2PathClumpOutsideRoom(roomR, roomC) {
     return false;
 }
 
-function renderMiniMap() {
-    const mini = document.getElementById('miniGrid');
-    mini.innerHTML = '';
-    mini.style.gridTemplateColumns = `repeat(${SIZE}, 12px)`;
-    for(let r=0; r<SIZE; r++) {
-        for(let c=0; c<SIZE; c++) {
-            const div = document.createElement('div');
-            div.style.width = '12px';
-            div.style.height = '12px';
-            if (stockpilePos && stockpilePos.r === r && stockpilePos.c === c) {
-                div.style.backgroundColor = '#ff00ff'; // Magenta for stockpile
-            } else {
-                div.style.backgroundColor = solution[r][c] === 1 ? '#ffaa00' : '#000';
-            }
-            mini.appendChild(div);
-        }
-    }
-}
-
 function handleCellAction(idx) {
     const r = Math.floor(idx / SIZE), c = idx % SIZE;
     if (isWon) return;
@@ -2401,6 +2381,14 @@ function update() {
             }
         }
 
+        // Render answer key overlay if enabled
+        // Render answer key overlay if enabled AND menu is open
+        if (showKey && menuOpen && solution[r][c] === 1) {
+            const keyOverlay = document.createElement('div');
+            keyOverlay.className = 'answer-key-overlay';
+            cell.appendChild(keyOverlay);
+        }
+
         layers.forEach((layer, lIdx) => {
             if (layer[i] === 1) {
                 const isError = rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c];
@@ -2742,17 +2730,21 @@ document.getElementById('discardBtn').onclick = () => {
 };
 document.getElementById('newMazeBtn').onclick = () => confirmReset(() => init(true));
 document.getElementById('nextLevelBtn').onclick = () => init(false);
-document.getElementById('decryptBtn').onclick = () => {
+document.getElementById('decryptToggleBtn').onclick = () => {
     ChipSound.click();
     showKey = !showKey;
-    const section = document.getElementById('answerKeySection');
+    const btn = document.getElementById('decryptToggleBtn');
+    const state = document.getElementById('decryptToggleState');
     if (showKey) {
-        section.classList.remove('hidden');
-        section.style.display = 'flex';
+        btn.classList.remove('off');
+        state.textContent = 'ON';
+        state.classList.remove('off-state');
     } else {
-        section.classList.add('hidden');
-        section.style.display = 'none';
+        btn.classList.add('off');
+        state.textContent = 'OFF';
+        state.classList.add('off-state');
     }
+    update();
 };
 document.getElementById('briefingBtn').onclick = () => {
     ChipSound.click();
@@ -2762,18 +2754,26 @@ document.getElementById('briefingBtn').onclick = () => {
 document.getElementById('closeBriefingBtn').onclick = () => { ChipSound.click(); document.getElementById('briefingOverlay').style.display = 'none'; };
 
 // Slide-in menu
+let menuOpen = false;
 document.getElementById('menuBtn').onclick = () => {
     ChipSound.click();
+    menuOpen = true;
     document.getElementById('menuOverlay').classList.add('visible');
+    if (showKey) update(); // Show answer key overlay when menu opens
 };
+function closeMenu() {
+    menuOpen = false;
+    document.getElementById('menuOverlay').classList.remove('visible');
+    if (showKey) update(); // Hide answer key overlay when menu closes
+}
 document.getElementById('menuCloseBtn').onclick = () => {
     ChipSound.click();
-    document.getElementById('menuOverlay').classList.remove('visible');
+    closeMenu();
 };
 document.getElementById('menuOverlay').onclick = (e) => {
     if (e.target.id === 'menuOverlay') {
         ChipSound.click();
-        document.getElementById('menuOverlay').classList.remove('visible');
+        closeMenu();
     }
 };
 

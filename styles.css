@@ -114,7 +114,7 @@ body {
 }
 
 .slide-menu {
-    position: fixed; top: 0; left: 0; width: 260px; height: 100%;
+    position: fixed; top: 0; left: 0; width: 360px; height: 100%;
     background: rgba(10, 10, 15, 0.98);
     border-right: 2px solid var(--neon-cyan);
     box-shadow: 0 0 30px rgba(0, 243, 255, 0.3);
@@ -185,6 +185,50 @@ body {
     color: #666;
     border-color: #666;
 }
+
+/* Expandable menu sections */
+.menu-expand-section {
+    display: flex;
+    flex-direction: column;
+}
+.menu-expand-section.nested {
+    margin-left: 0;
+}
+.menu-expand-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.menu-expand-header .menu-item-label {
+    flex: 1;
+}
+.menu-expand-icon {
+    font-size: 10px;
+    transition: transform 0.2s ease;
+    color: var(--neon-cyan);
+    width: 12px;
+}
+.menu-expand-section.expanded > .menu-expand-header .menu-expand-icon {
+    transform: rotate(90deg);
+}
+.menu-expand-content {
+    display: none;
+    flex-direction: column;
+    padding-left: 20px;
+    border-left: 1px solid rgba(0, 243, 255, 0.2);
+    margin-left: 26px;
+}
+.menu-expand-section.expanded > .menu-expand-content {
+    display: flex;
+}
+.nested-item {
+    padding-left: 12px;
+    font-size: 13px;
+}
+.nested-item .menu-item-label {
+    opacity: 0.9;
+}
+
 .menu-divider {
     height: 1px; margin: 8px 20px;
     background: rgba(0, 243, 255, 0.2);

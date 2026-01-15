@@ -431,7 +431,39 @@ let stockpilePos = null; // {r, c} position of data stockpile, or null if none
 let isWon = false;
 let showKey = false;
 let undoState = null; // Single undo state: {layers, currentIdx, forkAnchors}
-let hintsEnabled = true; // Hints toggle state
+
+// Assist mode settings - hierarchical toggle system
+const assistSettings = {
+    enabled: true,           // Master toggle
+    visualHints: {
+        enabled: true,       // All visual hints
+        errorIndicators: true,    // Red X on invalid cells, red traces/dots for 2x2 clumps
+        progressIndicators: true  // Green/blue/cyan completion indicators
+    },
+    autoFill: {
+        enabled: true,       // All auto-fill features
+        deadEndFill: true,   // Auto-fill neighbors when clicking dead-ends
+        wallCompletion: true,  // Auto-complete paths when walls are done (green headers)
+        pathCompletion: false  // Auto-complete walls when paths are done (blue headers) - off by default, very powerful
+    }
+};
+
+// Helper functions to check assist settings
+function isErrorIndicatorsEnabled() {
+    return assistSettings.enabled && assistSettings.visualHints.enabled && assistSettings.visualHints.errorIndicators;
+}
+function isProgressIndicatorsEnabled() {
+    return assistSettings.enabled && assistSettings.visualHints.enabled && assistSettings.visualHints.progressIndicators;
+}
+function isDeadEndFillEnabled() {
+    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.deadEndFill;
+}
+function isWallCompletionEnabled() {
+    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.wallCompletion;
+}
+function isPathCompletionEnabled() {
+    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.pathCompletion;
+}
 
 function saveUndoState() {
     undoState = {
@@ -1662,8 +1694,8 @@ function handleCellAction(idx) {
 
         // If starting on a dead end node or stockpile, start drawing paths
         if (isDeadEnd || isStockpile) {
-            // Check neighbors (only for dead ends, not stockpile) - requires hints
-            if (isDeadEnd && hintsEnabled) {
+            // Check neighbors (only for dead ends, not stockpile) - requires dead-end fill assist
+            if (isDeadEnd && isDeadEndFillEnabled()) {
                 const merged = Array(SIZE*SIZE).fill(0);
                 layers.forEach(l => l.forEach((s, i) => { if(s === 1) merged[i] = 1; if(s === 2 && merged[i] !== 1) merged[i] = 2; }));
 
@@ -1861,9 +1893,11 @@ function handleLabelClick(isRow, index) {
     const wallsComplete = wallCount === target;
     const pathsComplete = !wallsComplete && pathCount === expectedPaths;
 
-    // Only fill if walls are complete (green) or paths are complete (blue)
-    // This feature requires hints to be enabled
-    if (!hintsEnabled) return;
+    // Check if the appropriate completion type is enabled
+    // Wall completion (green headers) fills paths when walls are done
+    // Path completion (blue headers) fills walls when paths are done
+    if (wallsComplete && !isWallCompletionEnabled()) return;
+    if (pathsComplete && !isPathCompletionEnabled()) return;
     if (!wallsComplete && !pathsComplete) return;
 
     // Determine what to fill: paths if walls complete, walls if paths complete
@@ -2029,7 +2063,8 @@ function update() {
         rowOk[r] = wallCount === targets.r[r];
         // Path is complete when we have exactly (SIZE - target walls) paths
         const expectedPaths = SIZE - targets.r[r];
-        rowPathOk[r] = hintsEnabled && !rowOk[r] && pathCount === expectedPaths;
+        // Blue headers are controlled by path completion toggle
+        rowPathOk[r] = isPathCompletionEnabled() && !rowOk[r] && pathCount === expectedPaths;
         let rowClass = `count-neon ${rowOk[r] ? 'count-ok' : (rowPathOk[r] ? 'count-path-ok' : (wallCount > targets.r[r] ? 'count-over' : ''))}`;
         if (currentIdx > 0 && fa && fa.type === 'row' && fa.index === r) {
             rowClass += ` label-anchor label-anchor-${anchorColor}`;
@@ -2050,7 +2085,8 @@ function update() {
         colOk[c] = wallCount === targets.c[c];
         // Path is complete when we have exactly (SIZE - target walls) paths
         const expectedPaths = SIZE - targets.c[c];
-        colPathOk[c] = hintsEnabled && !colOk[c] && pathCount === expectedPaths;
+        // Blue headers are controlled by path completion toggle
+        colPathOk[c] = isPathCompletionEnabled() && !colOk[c] && pathCount === expectedPaths;
         let colClass = `count-neon ${colOk[c] ? 'count-ok' : (colPathOk[c] ? 'count-path-ok' : (wallCount > targets.c[c] ? 'count-over' : ''))}`;
         if (currentIdx > 0 && fa && fa.type === 'col' && fa.index === c) {
             colClass += ` label-anchor label-anchor-${anchorColor}`;
@@ -2311,6 +2347,7 @@ function update() {
                 setAnimationDelay(icon);
                 stockpile.appendChild(icon);
             }
+            setAnimationDelay(stockpile);
             cell.appendChild(stockpile);
         }
 
@@ -2318,7 +2355,7 @@ function update() {
             // Determine node state
             let nodeState = 'normal';
             if (erraticIndices.has(i) || playerWalls === 4) nodeState = 'erratic';
-            else if (hintsEnabled && playerWalls === 3) nodeState = 'complete';
+            else if (isProgressIndicatorsEnabled() && playerWalls === 3) nodeState = 'complete';
             else if (connectedToManualPath >= 2) nodeState = 'conflict';
 
             let node;
@@ -2339,7 +2376,7 @@ function update() {
             }
             setAnimationDelay(node);
             cell.appendChild(node);
-        } else if(playerWalls >= 3 && merged[i] !== 1) {
+        } else if(isErrorIndicatorsEnabled() && playerWalls >= 3 && merged[i] !== 1) {
             const box = document.createElement('div');
             box.className = 'invalid-box';
             if ((rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c]) || merged[i] === 2) box.classList.add('invalid-box-high');
@@ -2359,9 +2396,9 @@ function update() {
                         const trace = document.createElement('div');
                         trace.className = `trace-line trace-${orient} ${cls}`;
                         let u = Math.min(i, nIdx), v = Math.max(i, nIdx);
-                        if (clumps.has(i) || clumps.has(nIdx)) trace.classList.add('trace-error');
+                        if (isErrorIndicatorsEnabled() && (clumps.has(i) || clumps.has(nIdx))) trace.classList.add('trace-error');
                         else if (erraticIndices.has(i)) trace.classList.add('trace-erratic');
-                        else if (hintsEnabled && (authenticatedEdges.has(`${u}-${v}`) || (complete3x3Cells.has(i) && complete3x3Cells.has(nIdx)))) {
+                        else if (isProgressIndicatorsEnabled() && (authenticatedEdges.has(`${u}-${v}`) || (complete3x3Cells.has(i) && complete3x3Cells.has(nIdx)))) {
                             // Use blue for traces inside the 3x3 data node, green for authenticated paths
                             const bothIn3x3 = complete3x3Cells.has(i) && complete3x3Cells.has(nIdx);
                             trace.classList.add(bothIn3x3 ? 'trace-complete-blue' : 'trace-complete');
@@ -2391,7 +2428,7 @@ function update() {
 
         layers.forEach((layer, lIdx) => {
             if (layer[i] === 1) {
-                const isError = hintsEnabled && (rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c]);
+                const isError = rowTotals[r] > targets.r[r] || colTotals[c] > targets.c[c];
                 const isCurrentLayer = lIdx === currentIdx;
 
                 // Use theme renderer if available
@@ -2411,10 +2448,10 @@ function update() {
 
                 // Determine path state
                 let pathState = 'normal';
-                if (clumps.has(i)) pathState = 'error';
+                if (isErrorIndicatorsEnabled() && clumps.has(i)) pathState = 'error';
                 else if (erraticIndices.has(i)) pathState = 'erratic';
-                else if (hintsEnabled && complete3x3Cells.has(i)) pathState = 'complete-blue';
-                else if (hintsEnabled && authenticatedIndices.has(i)) pathState = 'complete';
+                else if (isProgressIndicatorsEnabled() && complete3x3Cells.has(i)) pathState = 'complete-blue';
+                else if (isProgressIndicatorsEnabled() && authenticatedIndices.has(i)) pathState = 'complete';
 
                 // Use theme renderer if available
                 let dot;
@@ -2535,6 +2572,7 @@ function triggerVictorySequence() {
             icon.className = 'stockpile-icon';
             setAnimationDelay(icon);
             stockpile.appendChild(icon);
+            setAnimationDelay(stockpile);
             cell.appendChild(stockpile);
         }
 
@@ -2809,44 +2847,190 @@ document.getElementById('musicToggleBtn').onclick = () => {
     }
 };
 
-// Hints toggle with cookie persistence
-function loadHintsSetting() {
-    const match = document.cookie.match(/neuralReconHints=([^;]+)/);
+// Assist Mode toggle system with cookie persistence
+function loadAssistSettings() {
+    const match = document.cookie.match(/neuralReconAssist=([^;]+)/);
     if (match) {
-        hintsEnabled = match[1] === 'true';
+        try {
+            const saved = JSON.parse(decodeURIComponent(match[1]));
+            // Merge saved settings with defaults (in case new settings are added)
+            Object.assign(assistSettings, saved);
+            if (saved.visualHints) Object.assign(assistSettings.visualHints, saved.visualHints);
+            if (saved.autoFill) Object.assign(assistSettings.autoFill, saved.autoFill);
+        } catch (e) {
+            console.warn('Failed to parse assist settings cookie');
+        }
     }
-    // Update UI to match loaded state
-    const btn = document.getElementById('hintsToggleBtn');
-    const state = document.getElementById('hintsToggleState');
-    if (btn && state) {
-        btn.classList.toggle('off', !hintsEnabled);
-        state.textContent = hintsEnabled ? 'ON' : 'OFF';
-    }
+    updateAssistUI();
 }
 
-function saveHintsSetting() {
+function saveAssistSettings() {
     const expires = new Date(Date.now() + 365 * 5 * 24 * 60 * 60 * 1000).toUTCString();
-    document.cookie = `neuralReconHints=${hintsEnabled}; expires=${expires}; path=/; SameSite=Lax`;
+    document.cookie = `neuralReconAssist=${encodeURIComponent(JSON.stringify(assistSettings))}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
-document.getElementById('hintsToggleBtn').onclick = () => {
-    ChipSound.click();
-    hintsEnabled = !hintsEnabled;
-    saveHintsSetting();
-    const btn = document.getElementById('hintsToggleBtn');
-    const state = document.getElementById('hintsToggleState');
-    if (hintsEnabled) {
-        btn.classList.remove('off');
-        state.textContent = 'ON';
-    } else {
-        btn.classList.add('off');
-        state.textContent = 'OFF';
+function updateToggleUI(btnId, stateId, enabled) {
+    const btn = document.getElementById(btnId);
+    const state = document.getElementById(stateId);
+    if (btn && state) {
+        btn.classList.toggle('off', !enabled);
+        state.textContent = enabled ? 'ON' : 'OFF';
+        state.classList.toggle('off-state', !enabled);
     }
-    update(); // Refresh display to show/hide hints
+}
+
+function updateAssistUI() {
+    // Update all toggle states
+    updateToggleUI('assistModeBtn', 'assistModeState', assistSettings.enabled);
+    updateToggleUI('visualHintsBtn', 'visualHintsState', assistSettings.visualHints.enabled);
+    updateToggleUI('errorIndicatorsBtn', 'errorIndicatorsState', assistSettings.visualHints.errorIndicators);
+    updateToggleUI('progressIndicatorsBtn', 'progressIndicatorsState', assistSettings.visualHints.progressIndicators);
+    updateToggleUI('autoFillBtn', 'autoFillState', assistSettings.autoFill.enabled);
+    updateToggleUI('deadEndFillBtn', 'deadEndFillState', assistSettings.autoFill.deadEndFill);
+    updateToggleUI('wallCompletionBtn', 'wallCompletionState', assistSettings.autoFill.wallCompletion);
+    updateToggleUI('pathCompletionBtn', 'pathCompletionState', assistSettings.autoFill.pathCompletion);
+}
+
+// Propagate state changes down the hierarchy
+// Note: pathCompletion is never auto-toggled by parents - it must be explicitly enabled
+function propagateAssistState(enabled) {
+    assistSettings.visualHints.enabled = enabled;
+    assistSettings.visualHints.errorIndicators = enabled;
+    assistSettings.visualHints.progressIndicators = enabled;
+    assistSettings.autoFill.enabled = enabled;
+    assistSettings.autoFill.deadEndFill = enabled;
+    assistSettings.autoFill.wallCompletion = enabled;
+    // pathCompletion is not propagated - must be explicitly toggled
+}
+
+function propagateVisualHintsState(enabled) {
+    assistSettings.visualHints.errorIndicators = enabled;
+    assistSettings.visualHints.progressIndicators = enabled;
+}
+
+function propagateAutoFillState(enabled) {
+    assistSettings.autoFill.deadEndFill = enabled;
+    assistSettings.autoFill.wallCompletion = enabled;
+    // pathCompletion is not propagated - must be explicitly toggled
+}
+
+// Check if all children are enabled to update parent state
+function updateParentStates() {
+    // Update visualHints.enabled based on children
+    assistSettings.visualHints.enabled = assistSettings.visualHints.errorIndicators || assistSettings.visualHints.progressIndicators;
+    // Update autoFill.enabled based on children
+    assistSettings.autoFill.enabled = assistSettings.autoFill.deadEndFill || assistSettings.autoFill.wallCompletion || assistSettings.autoFill.pathCompletion;
+    // Update master enabled based on children
+    assistSettings.enabled = assistSettings.visualHints.enabled || assistSettings.autoFill.enabled;
+}
+
+// Expand/collapse handlers
+function setupExpandSection(sectionId, btnId) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+
+    btn.addEventListener('click', (e) => {
+        // Only toggle expand if clicking on the expand icon area
+        const rect = btn.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        // If click is in the first 40px (icon area), toggle expand
+        if (clickX < 40) {
+            e.stopPropagation();
+            const section = btn.closest('.menu-expand-section');
+            section.classList.toggle('expanded');
+            ChipSound.click();
+        }
+    });
+}
+
+// Toggle handlers
+document.getElementById('assistModeBtn').onclick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX - rect.left < 40) return; // Handled by expand listener
+    ChipSound.click();
+    assistSettings.enabled = !assistSettings.enabled;
+    propagateAssistState(assistSettings.enabled);
+    saveAssistSettings();
+    updateAssistUI();
+    update();
 };
 
-// Load hints setting on startup
-loadHintsSetting();
+document.getElementById('visualHintsBtn').onclick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX - rect.left < 40) return;
+    ChipSound.click();
+    assistSettings.visualHints.enabled = !assistSettings.visualHints.enabled;
+    propagateVisualHintsState(assistSettings.visualHints.enabled);
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('errorIndicatorsBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.visualHints.errorIndicators = !assistSettings.visualHints.errorIndicators;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('progressIndicatorsBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.visualHints.progressIndicators = !assistSettings.visualHints.progressIndicators;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('autoFillBtn').onclick = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    if (e.clientX - rect.left < 40) return;
+    ChipSound.click();
+    assistSettings.autoFill.enabled = !assistSettings.autoFill.enabled;
+    propagateAutoFillState(assistSettings.autoFill.enabled);
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('deadEndFillBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.autoFill.deadEndFill = !assistSettings.autoFill.deadEndFill;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('wallCompletionBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.autoFill.wallCompletion = !assistSettings.autoFill.wallCompletion;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('pathCompletionBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.autoFill.pathCompletion = !assistSettings.autoFill.pathCompletion;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+// Setup expand sections
+setupExpandSection('assistModeContent', 'assistModeBtn');
+setupExpandSection('visualHintsContent', 'visualHintsBtn');
+setupExpandSection('autoFillContent', 'autoFillBtn');
+
+// Load assist settings on startup
+loadAssistSettings();
 
 // Stats dialog
 let currentStatsSize = 4;

@@ -324,14 +324,62 @@
                     <span class="menu-item-label">Stats</span>
                 </button>
                 <div class="menu-divider"></div>
-                <button id="hintsToggleBtn" class="menu-item menu-toggle">
-                    <span class="menu-item-label">Hints</span>
-                    <span id="hintsToggleState" class="menu-toggle-state">ON</span>
-                </button>
-                <button id="decryptToggleBtn" class="menu-item menu-toggle">
-                    <span class="menu-item-label">Decrypt Overlay</span>
-                    <span id="decryptToggleState" class="menu-toggle-state off-state">OFF</span>
-                </button>
+
+                <!-- Assist Mode Expandable Menu -->
+                <div class="menu-expand-section">
+                    <button id="assistModeBtn" class="menu-item menu-toggle menu-expand-header">
+                        <span class="menu-expand-icon">▶</span>
+                        <span class="menu-item-label">Assist Mode</span>
+                        <span id="assistModeState" class="menu-toggle-state">ON</span>
+                    </button>
+                    <div id="assistModeContent" class="menu-expand-content">
+                        <!-- Visual Hints Sub-section -->
+                        <div class="menu-expand-section nested">
+                            <button id="visualHintsBtn" class="menu-item menu-toggle menu-expand-header">
+                                <span class="menu-expand-icon">▶</span>
+                                <span class="menu-item-label">Visual Hints</span>
+                                <span id="visualHintsState" class="menu-toggle-state">ON</span>
+                            </button>
+                            <div id="visualHintsContent" class="menu-expand-content">
+                                <button id="errorIndicatorsBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Error Indicators</span>
+                                    <span id="errorIndicatorsState" class="menu-toggle-state">ON</span>
+                                </button>
+                                <button id="progressIndicatorsBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Progress Indicators</span>
+                                    <span id="progressIndicatorsState" class="menu-toggle-state">ON</span>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Auto-fill Sub-section -->
+                        <div class="menu-expand-section nested">
+                            <button id="autoFillBtn" class="menu-item menu-toggle menu-expand-header">
+                                <span class="menu-expand-icon">▶</span>
+                                <span class="menu-item-label">Auto-fill</span>
+                                <span id="autoFillState" class="menu-toggle-state">ON</span>
+                            </button>
+                            <div id="autoFillContent" class="menu-expand-content">
+                                <button id="deadEndFillBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Dead-end Fill</span>
+                                    <span id="deadEndFillState" class="menu-toggle-state">ON</span>
+                                </button>
+                                <button id="wallCompletionBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Wall Completion</span>
+                                    <span id="wallCompletionState" class="menu-toggle-state">ON</span>
+                                </button>
+                                <button id="pathCompletionBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Path Completion</span>
+                                    <span id="pathCompletionState" class="menu-toggle-state">ON</span>
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Decrypt Overlay -->
+                        <button id="decryptToggleBtn" class="menu-item menu-toggle nested-item">
+                            <span class="menu-item-label">Decrypt Overlay</span>
+                            <span id="decryptToggleState" class="menu-toggle-state off-state">OFF</span>
+                        </button>
+                    </div>
+                </div>
             </div>
             <div class="menu-footer">
                 <div class="menu-divider"></div>

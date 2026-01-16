@@ -237,6 +237,107 @@ body {
     margin-top: auto;
     padding-bottom: 16px;
 }
+
+/* Seed Section */
+.seed-section {
+    padding: 12px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.seed-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.seed-label {
+    color: #888;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.seed-value {
+    font-family: 'Courier New', monospace;
+    color: var(--neon-cyan);
+    font-size: 14px;
+    letter-spacing: 1px;
+}
+.seed-copy-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    padding: 2px 6px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+.seed-copy-btn:hover {
+    opacity: 1;
+}
+.seed-history {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.seed-history-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+.seed-history-item {
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    color: #666;
+    cursor: pointer;
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    transition: all 0.2s;
+}
+.seed-history-item:hover {
+    color: var(--neon-cyan);
+    background: rgba(0, 243, 255, 0.1);
+}
+.seed-input-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+.seed-input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #444;
+    color: var(--neon-cyan);
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.seed-input:focus {
+    border-color: var(--neon-cyan);
+}
+.seed-input::placeholder {
+    color: #555;
+}
+.seed-play-btn {
+    background: rgba(0, 243, 255, 0.1);
+    border: 1px solid var(--neon-cyan);
+    color: var(--neon-cyan);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+}
+.seed-play-btn:hover {
+    background: var(--neon-cyan);
+    color: #000;
+}
+
 .menu-audio-row {
     display: flex; justify-content: center; gap: 16px;
     padding: 12px 20px;

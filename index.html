@@ -383,6 +383,23 @@
             </div>
             <div class="menu-footer">
                 <div class="menu-divider"></div>
+                <!-- Seed Section -->
+                <div class="seed-section">
+                    <div class="seed-current">
+                        <span class="seed-label">Seed:</span>
+                        <span id="currentSeed" class="seed-value">------</span>
+                        <button id="copySeedBtn" class="seed-copy-btn" title="Copy seed">📋</button>
+                    </div>
+                    <div class="seed-history">
+                        <span class="seed-label">Recent:</span>
+                        <div id="seedHistory" class="seed-history-list"></div>
+                    </div>
+                    <div class="seed-input-row">
+                        <input type="text" id="seedInput" class="seed-input" placeholder="Enter seed..." maxlength="12">
+                        <button id="playSeedBtn" class="seed-play-btn">Play</button>
+                    </div>
+                </div>
+                <div class="menu-divider"></div>
                 <div class="menu-audio-row">
                     <button id="soundToggleBtn" class="menu-audio-btn" title="Sound Effects">
                         <span id="soundIcon">🔊</span>

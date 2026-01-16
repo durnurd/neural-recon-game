@@ -432,6 +432,78 @@ let isWon = false;
 let showKey = false;
 let undoState = null; // Single undo state: {layers, currentIdx, forkAnchors}
 
+// Seeded random number generator (Mulberry32)
+let currentSeed = null;
+let seedHistory = []; // Last several seeds
+const MAX_SEED_HISTORY = 5;
+
+function mulberry32(seed) {
+    return function() {
+        let t = seed += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+let seededRandom = Math.random; // Default to Math.random
+
+function generateSeed() {
+    // Generate a 6-character alphanumeric seed
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid confusing chars like 0/O, 1/I
+    let seed = '';
+    for (let i = 0; i < 6; i++) {
+        seed += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return seed;
+}
+
+function seedToNumber(seed) {
+    // Convert alphanumeric seed to a number for the RNG
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+        hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+    }
+    return Math.abs(hash);
+}
+
+function setSeed(seed) {
+    currentSeed = seed.toUpperCase();
+    seededRandom = mulberry32(seedToNumber(currentSeed));
+    updateSeedDisplay();
+}
+
+function addToSeedHistory(seed) {
+    // Don't add duplicates
+    seedHistory = seedHistory.filter(s => s !== seed);
+    seedHistory.unshift(seed);
+    if (seedHistory.length > MAX_SEED_HISTORY) {
+        seedHistory.pop();
+    }
+    updateSeedHistoryDisplay();
+}
+
+function updateSeedDisplay() {
+    const el = document.getElementById('currentSeed');
+    if (el) el.textContent = currentSeed || '------';
+}
+
+function updateSeedHistoryDisplay() {
+    const container = document.getElementById('seedHistory');
+    if (!container) return;
+    container.innerHTML = '';
+    seedHistory.slice(1).forEach(seed => { // Skip current seed (index 0)
+        const item = document.createElement('span');
+        item.className = 'seed-history-item';
+        item.textContent = seed;
+        item.onclick = () => {
+            document.getElementById('seedInput').value = seed;
+        };
+        container.appendChild(item);
+    });
+}
+
 // Assist mode settings - hierarchical toggle system
 const assistSettings = {
     enabled: true,           // Master toggle
@@ -650,7 +722,7 @@ function generateTechnoBabble() {
     return `${prefix}-${middle} ${suffix}. ${extra}`;
 }
 
-function init(resetStreak = true) {
+function init(resetStreak = true, specificSeed = null) {
     isWon = false;
     document.getElementById('victoryOverlay').classList.remove('visible');
     ChipSound.newGame();
@@ -664,6 +736,11 @@ function init(resetStreak = true) {
     let scaleFactor = (SIZE <= 4) ? 1.8 : (SIZE <= 6 ? 1.4 : 1.0);
     document.documentElement.style.setProperty('--grid-size', SIZE);
     document.documentElement.style.setProperty('--cell-size', `min(${10 * scaleFactor}vw, ${10 * scaleFactor}vh, 75px)`);
+
+    // Set up seed for this game
+    const seed = specificSeed || generateSeed();
+    setSeed(seed);
+    addToSeedHistory(seed);
 
     // Generate maze
     generateMaze();
@@ -687,7 +764,7 @@ function init(resetStreak = true) {
 
 // Choose maze generation algorithm randomly (50/50)
 function generateMaze() {
-    if (Math.random() < 0.5) {
+    if (seededRandom() < 0.5) {
         generateMazeDFS();
     } else {
         generateMazeAStar();
@@ -697,7 +774,7 @@ function generateMaze() {
 // DFS maze generation - creates long natural walls
 function generateMazeDFS() {
     solution = Array(SIZE).fill().map(() => Array(SIZE).fill(1));
-    const start = {r: Math.floor(Math.random()*SIZE), c: Math.floor(Math.random()*SIZE)};
+    const start = {r: Math.floor(seededRandom()*SIZE), c: Math.floor(seededRandom()*SIZE)};
     solution[start.r][start.c] = 0;
     let stack = [start], visited = new Set([`${start.r},${start.c}`]);
 
@@ -716,7 +793,7 @@ function generateMazeDFS() {
             }
         });
         if(neighbors.length > 0) {
-            let next = neighbors[Math.floor(Math.random()*neighbors.length)];
+            let next = neighbors[Math.floor(seededRandom()*neighbors.length)];
             solution[next.r][next.c] = 0;
             visited.add(`${next.r},${next.c}`);
             stack.push(next);
@@ -822,7 +899,7 @@ function findValidStartPoint(weights, requireFourWalls) {
     }
 
     if (candidates.length === 0) return null;
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    return candidates[Math.floor(seededRandom() * candidates.length)];
 }
 
 // Find a valid end point: distant from start, 3-4 walls around it
@@ -852,7 +929,7 @@ function findValidEndPoint(weights, start, minDistance) {
     // Prefer more distant points
     candidates.sort((a, b) => b.dist - a.dist);
     const topCandidates = candidates.slice(0, Math.max(1, Math.floor(candidates.length / 3)));
-    return topCandidates[Math.floor(Math.random() * topCandidates.length)];
+    return topCandidates[Math.floor(seededRandom() * topCandidates.length)];
 }
 
 // Count orthogonal walls around a cell
@@ -1126,7 +1203,7 @@ function connectDisconnectedSubgraphs(weights) {
         const other = components[i];
 
         // Pick a random point from the smaller component
-        const startPoint = other[Math.floor(Math.random() * other.length)];
+        const startPoint = other[Math.floor(seededRandom() * other.length)];
 
         // Find closest point in main component
         let closestPoint = null;
@@ -1215,7 +1292,7 @@ function ensureNoFullWallLines() {
             }
             // Shuffle
             for (let i = candidates.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
+                const j = Math.floor(seededRandom() * (i + 1));
                 [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
             }
             for (const c of candidates) {
@@ -1238,7 +1315,7 @@ function ensureNoFullWallLines() {
                 if (hasAdjacentPath(r, c)) candidates.push(r);
             }
             for (let i = candidates.length - 1; i > 0; i--) {
-                const j = Math.floor(Math.random() * (i + 1));
+                const j = Math.floor(seededRandom() * (i + 1));
                 [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
             }
             for (const r of candidates) {
@@ -1280,7 +1357,7 @@ function tryAddSecretRoom() {
     stockpilePos = null;
 
     if (SIZE <= 5) return; // No data rooms for 5x5 or smaller
-    if (SIZE === 6 && Math.random() > 0.25) return; // Only 25% chance for 6x6
+    if (SIZE === 6 && seededRandom() > 0.25) return; // Only 25% chance for 6x6
 
     // Save original solution in case we need to revert
     const originalSolution = solution.map(row => [...row]);
@@ -1305,7 +1382,7 @@ function tryAddSecretRoom() {
     }
 
     // Shuffle within priority groups
-    candidates.sort((a, b) => a.priority - b.priority || Math.random() - 0.5);
+    candidates.sort((a, b) => a.priority - b.priority || seededRandom() - 0.5);
 
     for (const {r, c} of candidates) {
         // Restore original solution for each attempt
@@ -1428,7 +1505,7 @@ function tryAddSecretRoom() {
         }
 
         // Step 4: Open the door
-        const door = doorCandidates[Math.floor(Math.random() * doorCandidates.length)];
+        const door = doorCandidates[Math.floor(seededRandom() * doorCandidates.length)];
         solution[door.wallR][door.wallC] = 0;
 
         // Step 5: Check connectivity and try to fix if broken
@@ -1449,7 +1526,7 @@ function tryAddSecretRoom() {
                 roomCells.push({r: r + dr, c: c + dc});
             }
         }
-        stockpilePos = roomCells[Math.floor(Math.random() * roomCells.length)];
+        stockpilePos = roomCells[Math.floor(seededRandom() * roomCells.length)];
         return;
     }
 
@@ -2505,8 +2582,7 @@ function update() {
         }
 
         // Render answer key overlay if enabled
-        // Render answer key overlay if enabled AND menu is open
-        if (showKey && menuOpen && solution[r][c] === 1) {
+        if (showKey && solution[r][c] === 1) {
             const keyOverlay = document.createElement('div');
             keyOverlay.className = 'answer-key-overlay';
             cell.appendChild(keyOverlay);
@@ -2878,17 +2954,12 @@ document.getElementById('briefingBtn').onclick = () => {
 document.getElementById('closeBriefingBtn').onclick = () => { ChipSound.click(); document.getElementById('briefingOverlay').style.display = 'none'; };
 
 // Slide-in menu
-let menuOpen = false;
 document.getElementById('menuBtn').onclick = () => {
     ChipSound.click();
-    menuOpen = true;
     document.getElementById('menuOverlay').classList.add('visible');
-    if (showKey) update(); // Show answer key overlay when menu opens
 };
 function closeMenu() {
-    menuOpen = false;
     document.getElementById('menuOverlay').classList.remove('visible');
-    if (showKey) update(); // Hide answer key overlay when menu closes
 }
 document.getElementById('menuCloseBtn').onclick = () => {
     ChipSound.click();
@@ -3316,6 +3387,34 @@ window.onload = () => {
             updateBriefingTerminology(newTheme);
         });
     }
+
+    // Seed UI event handlers
+    document.getElementById('copySeedBtn').onclick = () => {
+        if (currentSeed) {
+            navigator.clipboard.writeText(currentSeed).then(() => {
+                const btn = document.getElementById('copySeedBtn');
+                btn.textContent = '✓';
+                setTimeout(() => btn.textContent = '📋', 1000);
+            });
+        }
+    };
+
+    document.getElementById('playSeedBtn').onclick = () => {
+        const input = document.getElementById('seedInput');
+        const seed = input.value.trim().toUpperCase();
+        if (seed.length > 0) {
+            ChipSound.click();
+            closeMenu();
+            init(true, seed);
+            input.value = '';
+        }
+    };
+
+    document.getElementById('seedInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            document.getElementById('playSeedBtn').click();
+        }
+    });
 
     init(true);
 

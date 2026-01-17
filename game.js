@@ -596,6 +596,7 @@ let drawingMode = 'smart';
 
 // Stats tracking
 let gameStartTime = null;
+let elapsedTimeBeforePause = 0; // Accumulated time from previous sessions
 let moveCount = 0;
 let winStreak = 0;
 
@@ -700,6 +701,74 @@ const PlayerStats = (() => {
     };
 })();
 
+// ============================================
+// PERSISTENT GAME STATE (localStorage-based)
+// ============================================
+const GameState = (() => {
+    const STORAGE_KEY = 'neuralReconGameState';
+
+    function save() {
+        if (isWon) {
+            // Don't save won games - clear instead
+            clear();
+            return;
+        }
+
+        // Calculate total elapsed time (previous + current session)
+        const currentSessionTime = gameStartTime ? Date.now() - gameStartTime : 0;
+        const totalElapsed = elapsedTimeBeforePause + currentSessionTime;
+
+        const state = {
+            SIZE,
+            currentSeed,
+            solution,
+            layers,
+            currentIdx,
+            targets,
+            forkAnchors,
+            stockpilePos,
+            undoState,
+            elapsedTime: totalElapsed, // Save total elapsed time instead of start time
+            moveCount,
+            winStreak,
+            drawingMode,
+            savedAt: Date.now()
+        };
+
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+            console.warn('Failed to save game state:', e);
+        }
+    }
+
+    function load() {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                return JSON.parse(saved);
+            }
+        } catch (e) {
+            console.warn('Failed to load game state:', e);
+        }
+        return null;
+    }
+
+    function clear() {
+        try {
+            localStorage.removeItem(STORAGE_KEY);
+        } catch (e) {
+            console.warn('Failed to clear game state:', e);
+        }
+    }
+
+    function hasSavedGame() {
+        return load() !== null;
+    }
+
+    return { save, load, clear, hasSavedGame };
+})();
+
 // Flavor text generator - uses theme if available, falls back to cyberpunk defaults
 const defaultBabble = {
     prefixes: ['Quantum', 'Neural', 'Synaptic', 'Crypto', 'Hyper', 'Meta', 'Nano', 'Cyber', 'Proto', 'Flux'],
@@ -728,6 +797,7 @@ function init(resetStreak = true, specificSeed = null) {
     ChipSound.newGame();
     // Reset stats for new game
     gameStartTime = Date.now();
+    elapsedTimeBeforePause = 0;
     moveCount = 0;
     if(resetStreak) winStreak = 0;
 
@@ -758,6 +828,53 @@ function init(resetStreak = true, specificSeed = null) {
     currentIdx = 0;
     undoState = null;
     document.getElementById('undoBtn').disabled = true;
+    updateButtonStates();
+    render();
+
+    // Clear any saved state since we started a new game
+    GameState.clear();
+}
+
+// Restore game from saved state
+function restoreGameState(state) {
+    isWon = false;
+    document.getElementById('victoryOverlay').classList.remove('visible');
+
+    // Restore all state variables
+    SIZE = state.SIZE;
+    currentSeed = state.currentSeed;
+    solution = state.solution;
+    layers = state.layers;
+    currentIdx = state.currentIdx;
+    targets = state.targets;
+    forkAnchors = state.forkAnchors;
+    stockpilePos = state.stockpilePos;
+    undoState = state.undoState;
+    // Restore elapsed time: start fresh timer, carry over previous elapsed
+    elapsedTimeBeforePause = state.elapsedTime || 0;
+    gameStartTime = Date.now();
+    moveCount = state.moveCount;
+    winStreak = state.winStreak || 0;
+    if (state.drawingMode) {
+        drawingMode = state.drawingMode;
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === drawingMode);
+        });
+    }
+
+    // Update UI to match restored size
+    document.getElementById('gridSizeSelect').value = SIZE;
+    let scaleFactor = (SIZE <= 4) ? 1.8 : (SIZE <= 6 ? 1.4 : 1.0);
+    document.documentElement.style.setProperty('--grid-size', SIZE);
+    document.documentElement.style.setProperty('--cell-size', `min(${10 * scaleFactor}vw, ${10 * scaleFactor}vh, 75px)`);
+
+    // Update seed display
+    updateSeedDisplay();
+    addToSeedHistory(currentSeed);
+
+    // Update undo button state
+    document.getElementById('undoBtn').disabled = undoState === null;
+
     updateButtonStates();
     render();
 }
@@ -2635,6 +2752,9 @@ function update() {
     }
 
     updateButtonStates();
+
+    // Save game state after each update
+    GameState.save();
 }
 
 function getPathOrder() {
@@ -2809,7 +2929,8 @@ function triggerVictorySequence() {
         setTimeout(() => {
             // Update stats
             winStreak++;
-            const elapsed = Date.now() - gameStartTime;
+            const currentSessionTime = gameStartTime ? Date.now() - gameStartTime : 0;
+            const elapsed = elapsedTimeBeforePause + currentSessionTime;
             document.getElementById('statTime').textContent = formatTime(elapsed);
             document.getElementById('statMoves').textContent = moveCount;
             document.getElementById('statStreak').textContent = winStreak;
@@ -2946,12 +3067,48 @@ document.getElementById('decryptToggleBtn').onclick = () => {
     }
     update();
 };
+// Cookie helper functions for briefing preference
+function setBriefingCookie(dontShow) {
+    const days = 365;
+    const date = new Date();
+    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+    document.cookie = `hideBriefingOnStartup=${dontShow ? '1' : '0'}; expires=${date.toUTCString()}; path=/; SameSite=Lax`;
+}
+
+function getBriefingCookie() {
+    const match = document.cookie.match(/(?:^|; )hideBriefingOnStartup=([^;]*)/);
+    return match ? match[1] === '1' : false;
+}
+
+// Show briefing dialog and sync checkbox state with cookie
+function showBriefingDialog() {
+    const checkbox = document.getElementById('dontShowBriefingCheckbox');
+    if (checkbox) {
+        checkbox.checked = getBriefingCookie();
+    }
+    document.getElementById('briefingOverlay').style.display = 'flex';
+}
+
+// Show briefing on startup if not disabled
+function showBriefingOnStartup() {
+    if (!getBriefingCookie()) {
+        showBriefingDialog();
+    }
+}
+
 document.getElementById('briefingBtn').onclick = () => {
     ChipSound.click();
     document.getElementById('menuOverlay').classList.remove('visible');
-    document.getElementById('briefingOverlay').style.display = 'flex';
+    showBriefingDialog();
 };
-document.getElementById('closeBriefingBtn').onclick = () => { ChipSound.click(); document.getElementById('briefingOverlay').style.display = 'none'; };
+document.getElementById('closeBriefingBtn').onclick = () => {
+    ChipSound.click();
+    const checkbox = document.getElementById('dontShowBriefingCheckbox');
+    if (checkbox) {
+        setBriefingCookie(checkbox.checked);
+    }
+    document.getElementById('briefingOverlay').style.display = 'none';
+};
 
 // Slide-in menu
 document.getElementById('menuBtn').onclick = () => {
@@ -3416,7 +3573,28 @@ window.onload = () => {
         }
     });
 
-    init(true);
+    // Try to restore saved game state, otherwise start new game
+    const savedState = GameState.load();
+    if (savedState) {
+        restoreGameState(savedState);
+    } else {
+        init(true);
+    }
+
+    // Save game state when page is about to unload
+    window.addEventListener('beforeunload', () => {
+        GameState.save();
+    });
+
+    // Also save periodically and after state changes via visibilitychange
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            GameState.save();
+        }
+    });
+
+    // Show briefing on startup if not disabled by cookie
+    showBriefingOnStartup();
 
     // Start background music by default
     ChipMusic.start();

@@ -1054,7 +1054,30 @@ body {
 .briefing-footer {
     margin-top: 1.5rem;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.briefing-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #888;
+    cursor: pointer;
+    user-select: none;
+}
+
+.briefing-checkbox-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--neon-cyan, #0ff);
+    cursor: pointer;
+}
+
+.briefing-checkbox-label:hover {
+    color: #aaa;
 }
 
 .layer-indicator {

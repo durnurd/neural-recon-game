@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = 'neural-recon-v2';
+﻿const CACHE_NAME = 'neural-recon-v3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -17,7 +17,10 @@ const ASSETS_TO_CACHE = [
   './themes/theme-base.js',
   './themes/theme-manager.js',
   './themes/theme-cyberpunk.js',
-  './themes/theme-garden.js'
+  // Maskable icons
+  './icons/icon-maskable.svg',
+  './icons/icon-maskable-192.png',
+  './icons/icon-maskable-512.png'
 ];
 
 // Install event - cache assets

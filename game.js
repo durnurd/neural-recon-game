@@ -3142,6 +3142,7 @@ document.getElementById('soundToggleBtn').onclick = () => {
         icon.textContent = '🔊';
         ChipSound.click(); // Play a sound to confirm unmute
     }
+    saveAudioSettings();
 };
 
 // Music toggle button
@@ -3159,7 +3160,31 @@ document.getElementById('musicToggleBtn').onclick = () => {
         icon.textContent = '🎶';
         btn.title = 'Stop Music';
     }
+    saveAudioSettings();
 };
+
+// Audio preferences persistence
+function loadAudioSettings() {
+    const match = document.cookie.match(/neuralReconAudio=([^;]+)/);
+    if (match) {
+        try {
+            const saved = JSON.parse(decodeURIComponent(match[1]));
+            return saved;
+        } catch (e) {
+            console.warn('Failed to parse audio settings cookie');
+        }
+    }
+    return { soundMuted: false, musicPlaying: true };
+}
+
+function saveAudioSettings() {
+    const settings = {
+        soundMuted: ChipSound.getMuted(),
+        musicPlaying: ChipMusic.isPlaying()
+    };
+    const expires = new Date(Date.now() + 365 * 5 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `neuralReconAudio=${encodeURIComponent(JSON.stringify(settings))}; expires=${expires}; path=/; SameSite=Lax`;
+}
 
 // Assist Mode toggle system with cookie persistence
 function loadAssistSettings() {
@@ -3596,13 +3621,33 @@ window.onload = () => {
     // Show briefing on startup if not disabled by cookie
     showBriefingOnStartup();
 
-    // Start background music by default
-    ChipMusic.start();
+    // Load audio settings and apply them
+    const audioSettings = loadAudioSettings();
+    const soundBtn = document.getElementById('soundToggleBtn');
+    const soundIcon = document.getElementById('soundIcon');
     const musicBtn = document.getElementById('musicToggleBtn');
     const musicIcon = document.getElementById('musicIcon');
-    if (musicBtn && musicIcon) {
-        musicBtn.classList.remove('muted');
-        musicIcon.textContent = '🎶';
-        musicBtn.title = 'Stop Music';
+
+    // Apply sound mute setting
+    if (audioSettings.soundMuted) {
+        ChipSound.setMuted(true);
+        if (soundBtn) soundBtn.classList.add('muted');
+        if (soundIcon) soundIcon.textContent = '🔇';
+    }
+
+    // Apply music setting
+    if (audioSettings.musicPlaying) {
+        ChipMusic.start();
+        if (musicBtn) {
+            musicBtn.classList.remove('muted');
+            musicBtn.title = 'Stop Music';
+        }
+        if (musicIcon) musicIcon.textContent = '🎶';
+    } else {
+        if (musicBtn) {
+            musicBtn.classList.add('muted');
+            musicBtn.title = 'Play Music';
+        }
+        if (musicIcon) musicIcon.textContent = '🎵';
     }
 };

@@ -3065,6 +3065,7 @@ document.getElementById('decryptToggleBtn').onclick = () => {
         state.textContent = 'OFF';
         state.classList.add('off-state');
     }
+    saveUserPreferences();
     update();
 };
 // Cookie helper functions for briefing preference
@@ -3142,7 +3143,7 @@ document.getElementById('soundToggleBtn').onclick = () => {
         icon.textContent = '🔊';
         ChipSound.click(); // Play a sound to confirm unmute
     }
-    saveAudioSettings();
+    saveUserPreferences();
 };
 
 // Music toggle button
@@ -3160,30 +3161,31 @@ document.getElementById('musicToggleBtn').onclick = () => {
         icon.textContent = '🎶';
         btn.title = 'Stop Music';
     }
-    saveAudioSettings();
+    saveUserPreferences();
 };
 
-// Audio preferences persistence
-function loadAudioSettings() {
-    const match = document.cookie.match(/neuralReconAudio=([^;]+)/);
+// User preferences persistence (audio, decrypt overlay)
+function loadUserPreferences() {
+    const match = document.cookie.match(/neuralReconPrefs=([^;]+)/);
     if (match) {
         try {
             const saved = JSON.parse(decodeURIComponent(match[1]));
             return saved;
         } catch (e) {
-            console.warn('Failed to parse audio settings cookie');
+            console.warn('Failed to parse user preferences cookie');
         }
     }
-    return { soundMuted: false, musicPlaying: true };
+    return { soundMuted: false, musicPlaying: true, decryptOverlay: false };
 }
 
-function saveAudioSettings() {
+function saveUserPreferences() {
     const settings = {
         soundMuted: ChipSound.getMuted(),
-        musicPlaying: ChipMusic.isPlaying()
+        musicPlaying: ChipMusic.isPlaying(),
+        decryptOverlay: showKey
     };
     const expires = new Date(Date.now() + 365 * 5 * 24 * 60 * 60 * 1000).toUTCString();
-    document.cookie = `neuralReconAudio=${encodeURIComponent(JSON.stringify(settings))}; expires=${expires}; path=/; SameSite=Lax`;
+    document.cookie = `neuralReconPrefs=${encodeURIComponent(JSON.stringify(settings))}; expires=${expires}; path=/; SameSite=Lax`;
 }
 
 // Assist Mode toggle system with cookie persistence
@@ -3621,22 +3623,24 @@ window.onload = () => {
     // Show briefing on startup if not disabled by cookie
     showBriefingOnStartup();
 
-    // Load audio settings and apply them
-    const audioSettings = loadAudioSettings();
+    // Load user preferences and apply them
+    const prefs = loadUserPreferences();
     const soundBtn = document.getElementById('soundToggleBtn');
     const soundIcon = document.getElementById('soundIcon');
     const musicBtn = document.getElementById('musicToggleBtn');
     const musicIcon = document.getElementById('musicIcon');
+    const decryptBtn = document.getElementById('decryptToggleBtn');
+    const decryptState = document.getElementById('decryptToggleState');
 
     // Apply sound mute setting
-    if (audioSettings.soundMuted) {
+    if (prefs.soundMuted) {
         ChipSound.setMuted(true);
         if (soundBtn) soundBtn.classList.add('muted');
         if (soundIcon) soundIcon.textContent = '🔇';
     }
 
     // Apply music setting
-    if (audioSettings.musicPlaying) {
+    if (prefs.musicPlaying) {
         ChipMusic.start();
         if (musicBtn) {
             musicBtn.classList.remove('muted');
@@ -3649,5 +3653,16 @@ window.onload = () => {
             musicBtn.title = 'Play Music';
         }
         if (musicIcon) musicIcon.textContent = '🎵';
+    }
+
+    // Apply decrypt overlay setting
+    if (prefs.decryptOverlay) {
+        showKey = true;
+        if (decryptBtn) decryptBtn.classList.remove('off');
+        if (decryptState) {
+            decryptState.textContent = 'ON';
+            decryptState.classList.remove('off-state');
+        }
+        update(); // Re-render grid to show overlay
     }
 };

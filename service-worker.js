@@ -1,4 +1,4 @@
-﻿const CACHE_NAME = 'neural-recon-v3';
+﻿const CACHE_NAME = 'neural-recon-cache';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -48,7 +48,9 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - stale-while-revalidate strategy
+// Returns cached version immediately for speed, then fetches fresh version
+// in background to update cache for next visit
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
   if (event.request.method !== 'GET') return;
@@ -59,29 +61,21 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        return fetch(event.request).then((response) => {
-          // Don't cache non-successful responses
-          if (!response || response.status !== 200 || response.type !== 'basic') {
-            return response;
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        // Start fetching fresh version in background
+        const fetchPromise = fetch(event.request).then((networkResponse) => {
+          // Update cache with fresh version (if valid)
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            cache.put(event.request, networkResponse.clone());
           }
+          return networkResponse;
+        }).catch(() => cachedResponse); // If network fails, fall back to cache
 
-          // Clone the response
-          const responseToCache = response.clone();
-
-          caches.open(CACHE_NAME)
-            .then((cache) => {
-              cache.put(event.request, responseToCache);
-            });
-
-          return response;
-        });
-      })
+        // Return cached version immediately, or wait for network if not cached
+        return cachedResponse || fetchPromise;
+      });
+    })
   );
 });
 

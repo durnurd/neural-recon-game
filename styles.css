@@ -377,6 +377,14 @@ body {
     color: #888;
     box-shadow: none;
 }
+.menu-version {
+    text-align: center;
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: 10px;
+    color: rgba(100, 100, 100, 0.6);
+    padding: 8px 0 0 0;
+    letter-spacing: 1px;
+}
 .btn-sound:hover:not(:disabled) {
     background: var(--btn-sound-color, var(--neon-magenta));
     color: #000;
@@ -820,32 +828,36 @@ body {
     padding: 8px 20px; font-size: 11px;
 }
 
-/* Hint Toast */
+/* Hint Toast - Android-style bottom toast */
 .hint-toast {
-    position: absolute;
+    position: fixed;
     left: 50%;
-    transform: translateX(-50%);
+    bottom: 24px;
+    transform: translateX(-50%) translateY(100px);
     background: rgba(5, 5, 6, 0.95);
     border: 2px solid var(--btn-hint-color, var(--neon-yellow, #ffcc00));
     box-shadow: 0 0 20px rgba(255, 204, 0, 0.4);
     padding: 12px 18px;
-    max-width: 320px;
+    max-width: min(90vw, 400px);
     z-index: 1000;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.3s ease, visibility 0.3s ease;
+    transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease;
     cursor: pointer;
     pointer-events: none;
+    border-radius: 8px;
 }
 
 .hint-toast.visible {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
 }
 
 .hint-toast.fading {
     opacity: 0;
+    transform: translateX(-50%) translateY(100px);
 }
 
 .hint-toast-content {
@@ -854,7 +866,7 @@ body {
 
 .hint-toast-message {
     font-family: var(--font-mono, 'Courier New', monospace);
-    font-size: 12px;
+    font-size: 13px;
     color: #ccc;
     line-height: 1.5;
 }
@@ -912,6 +924,36 @@ body {
         color: #fff;
         text-shadow: 0 0 15px var(--btn-hint-color, var(--neon-yellow, #ffcc00)), 0 0 30px var(--btn-hint-color, var(--neon-yellow, #ffcc00));
     }
+}
+
+/* Cell coordinate labels shown during hints */
+.cell-coord-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: clamp(8px, calc(var(--cell-size) * 0.28), 16px);
+    font-weight: bold;
+    color: rgba(100, 100, 100, 0.4);
+    pointer-events: none;
+    z-index: 2;
+    animation: coord-fade-in 0.3s ease-out;
+}
+
+.cell-coord-label.fading {
+    animation: coord-fade-out 0.3s ease-out forwards;
+}
+
+@keyframes coord-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes coord-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
 }
 
 .scan-lines {

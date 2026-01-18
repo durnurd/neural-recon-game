@@ -3616,6 +3616,41 @@ function hintCacheNearEdge(merged) {
     }
 }
 
+// Hint: Empty cell surrounded by 3+ walls must be a wall
+// An empty cell with 3+ walls around it cannot be a path (would be an invalid dead end)
+function hintEmptyDeadEndMustBeWall(merged) {
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const idx = r * SIZE + c;
+            // Only check empty cells
+            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+            // Skip if it's a target dead end (those are valid path locations)
+            if (isTargetDeadEnd(r, c)) continue;
+
+            // Count walls around this empty cell
+            let wallCount = 0;
+            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
+                    wallCount++; // Edge counts as wall
+                } else if (merged[nr * SIZE + nc] === 1) {
+                    wallCount++;
+                }
+            }
+
+            // If 3+ walls, this cell must be a wall (can't be a path - would be invalid dead end)
+            if (wallCount >= 3) {
+                return {
+                    message: `Cell ${cellRef(r, c)} must be a wall. A path there would be a dead end with no exit.`,
+                    highlight: { type: 'cell', r, c },
+                    cells: [{ r, c }], shouldBe: 'wall'
+                };
+            }
+        }
+    }
+    return null;
+}
+
 // Hint 5: 2x2 area with 3 paths
 function hint2x2With3Paths(merged) {
     const cell = find2x2With3Paths(merged);
@@ -3963,6 +3998,7 @@ function getHint() {
         { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
         { name: 'hintDeadEndCanBeFinished', fn: () => hintDeadEndCanBeFinished(merged) },
         { name: 'hintCacheNearEdge', fn: () => hintCacheNearEdge(merged) },
+        { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
         { name: 'hintPathMustExtend', fn: () => hintPathMustExtend(merged) },
         { name: 'hint2x2With3Paths', fn: () => hint2x2With3Paths(merged) },
         { name: 'hintCornerFlankingDeadEnds', fn: () => hintCornerFlankingDeadEnds(merged) },
@@ -4015,6 +4051,15 @@ function clearHintHighlights() {
     document.querySelectorAll('.hint-highlight-label').forEach(el => {
         el.classList.remove('hint-highlight-label');
     });
+    // Fade out and remove coordinate labels
+    const coordLabels = document.querySelectorAll('.cell-coord-label');
+    coordLabels.forEach(el => {
+        el.classList.add('fading');
+    });
+    // Remove after fade animation completes
+    setTimeout(() => {
+        coordLabels.forEach(el => el.remove());
+    }, 300);
 }
 
 // Helper to add highlight class with animation restart
@@ -4026,12 +4071,39 @@ function addHighlightClass(el, className) {
     el.classList.add(className);
 }
 
+// Add coordinate labels to empty cells when hint mentions specific cells
+function showCellCoordinates(hint) {
+    // Only show coordinates for cell-specific hints
+    if (!hint || !hint.highlight) return;
+    if (hint.highlight.type !== 'cell' && hint.highlight.type !== 'cells') return;
+
+    const gridCells = document.getElementById('mainGrid').querySelectorAll('.cell');
+    const merged = getMergedBoard();
+
+    for (let i = 0; i < SIZE * SIZE; i++) {
+        const r = Math.floor(i / SIZE);
+        const c = i % SIZE;
+        // Only add labels to empty cells (not walls, paths, dead ends, or stockpile)
+        if (merged[i] !== 0) continue;
+        if (isTargetDeadEnd(r, c)) continue;
+        if (stockpilePos && stockpilePos.r === r && stockpilePos.c === c) continue;
+
+        const label = document.createElement('div');
+        label.className = 'cell-coord-label';
+        label.textContent = cellRef(r, c);
+        gridCells[i].appendChild(label);
+    }
+}
+
 // Apply hint highlight based on hint type
 function applyHintHighlight(hint) {
     if (!hint || !hint.highlight) return;
 
     const hl = hint.highlight;
     const gridCells = document.getElementById('mainGrid').querySelectorAll('.cell');
+
+    // Show coordinate labels for cell-specific hints
+    showCellCoordinates(hint);
 
     if (hl.type === 'cell') {
         const idx = hl.r * SIZE + hl.c;
@@ -4081,46 +4153,13 @@ function applyHintHighlight(hint) {
 // Toast auto-hide timeout
 let hintToastTimeout = null;
 
-// Display hint as toast near the grid
+// Display hint as bottom toast (Android-style)
 function showHint(hint) {
     currentHint = hint;
     const toast = document.getElementById('hintToast');
     const message = document.getElementById('hintMessage');
 
     message.textContent = hint.message;
-
-    // Determine which row to position near
-    let targetRow = Math.floor(SIZE / 2); // Default to middle
-
-    if (hint.highlight) {
-        if (hint.highlight.type === 'cell') {
-            targetRow = hint.highlight.r;
-        } else if (hint.highlight.type === 'cells' && hint.highlight.cells.length > 0) {
-            // Use the topmost highlighted cell
-            targetRow = Math.min(...hint.highlight.cells.map(c => c.r));
-        } else if (hint.highlight.type === 'row') {
-            targetRow = hint.highlight.index;
-        } else if (hint.highlight.type === 'col') {
-            targetRow = 0; // Top for column hints
-        }
-    }
-
-    // Position toast above the target row (as percentage of grid)
-    // If target is in top half, position below; otherwise position above
-    const cellSize = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || 40;
-    let topPosition;
-
-    if (targetRow <= SIZE / 2) {
-        // Target in top half - position toast below the highlighted area
-        topPosition = (targetRow + 1) * (cellSize + 1) + 10;
-    } else {
-        // Target in bottom half - position toast above the highlighted area
-        topPosition = targetRow * (cellSize + 1) - 50;
-    }
-
-    // Clamp to reasonable bounds
-    topPosition = Math.max(-70, Math.min(topPosition, SIZE * (cellSize + 1) - 40));
-    toast.style.top = `${topPosition}px`;
 
     // Show toast and apply highlight immediately
     toast.classList.remove('fading');

@@ -48,7 +48,7 @@
                 <div class="briefing-section">
                     <h3>Rules</h3>
                     <p>1. The <span class="briefing-tag">numbers</span> on each row/column show how many <span class="theme-walls">walls</span> belong there.</p>
-                    <p>2. The path must be <span class="briefing-tag">continuous</span> — all path nodes and <span class="theme-deadends">dead ends</span> connect.</p>
+                    <p>2. The path must be <span class="briefing-tag">continuous</span> — all path nodes connect.</p>
                     <p>3. <span class="briefing-tag">No 2×2 squares</span> of path nodes allowed (except inside a <span class="theme-vault">vault</span>).</p>
                     <p>4. On larger grids, a <span class="briefing-tag theme-stockpile">Stockpile</span> may appear inside a hidden 3×3 <span class="theme-vault">vault</span> with a single door.</p>
                 </div>
@@ -303,6 +303,7 @@
         </select>
         <button id="newMazeBtn" class="cyber-btn">Initialize</button>
         <button id="undoBtn" class="cyber-btn" disabled>Undo</button>
+        <button id="hintBtn" class="cyber-btn btn-hint" title="Get Hint">?</button>
         <div class="btn-group-nowrap">
             <button id="addLayerBtn" class="cyber-btn btn-action">Fork</button>
             <button id="commitBtn" class="cyber-btn">Commit</button>
@@ -533,11 +534,22 @@
     <!-- Reset Puzzle Confirm Dialog -->
     <dialog id="resetPuzzleDialog" class="confirm-dialog">
         <div class="confirm-dialog-content">
-            <div class="confirm-dialog-title">CONFIRM RESET</div>
-            <p class="confirm-dialog-message">Discard current progress and start a new puzzle?</p>
+            <div class="confirm-dialog-title">CONFIRM INITIALIZATION</div>
+            <p class="confirm-dialog-message">Discard progress and start a new puzzle?</p>
             <div class="confirm-dialog-buttons">
                 <button id="resetPuzzleCancelBtn" class="cyber-btn">Cancel</button>
-                <button id="resetPuzzleConfirmBtn" class="cyber-btn btn-kill">Reset</button>
+                <button id="resetPuzzleConfirmBtn" class="cyber-btn btn-kill">Initialize</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Hint Dialog -->
+    <dialog id="hintDialog" class="hint-dialog">
+        <div class="hint-dialog-content">
+            <div class="hint-dialog-title">ANALYSIS</div>
+            <p id="hintMessage" class="hint-dialog-message"></p>
+            <div class="hint-dialog-buttons">
+                <button id="hintDismissBtn" class="cyber-btn btn-hint">Got It</button>
             </div>
         </div>
     </dialog>
@@ -546,7 +558,6 @@
     <script src="themes/theme-base.js"></script>
     <script src="themes/theme-manager.js"></script>
     <script src="themes/theme-cyberpunk.js"></script>
-    <script src="themes/theme-garden.js"></script>
 
     <script src="game.js"></script>
 

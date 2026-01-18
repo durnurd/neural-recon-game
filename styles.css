@@ -101,6 +101,16 @@ body {
 .btn-menu {
     font-size: 16px; padding: 4px 10px;
 }
+.btn-hint {
+    border-color: var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    color: var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    font-size: 14px; font-weight: bold; padding: 4px 10px; min-width: 32px;
+}
+.btn-hint:hover:not(:disabled) {
+    background: var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    color: #000;
+    box-shadow: 0 0 15px var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+}
 
 /* Slide-in Menu */
 .menu-overlay {
@@ -810,6 +820,98 @@ body {
     padding: 8px 20px; font-size: 11px;
 }
 
+/* Hint Dialog */
+.hint-dialog {
+    background: rgba(5, 5, 6, 0.98);
+    border: 2px solid var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    box-shadow: 0 0 30px rgba(255, 204, 0, 0.4);
+    padding: 0; max-width: 350px;
+}
+
+.hint-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.hint-dialog-content {
+    padding: 24px;
+}
+
+.hint-dialog-title {
+    font-size: 1.1rem; font-weight: 900; color: var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    text-shadow: 0 0 15px var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    letter-spacing: 2px; margin-bottom: 16px; text-align: center;
+    font-family: var(--font-heading, 'Courier New', monospace);
+}
+
+.hint-dialog-message {
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: 12px; color: #ccc; text-align: center;
+    margin-bottom: 20px; line-height: 1.5;
+}
+
+.hint-dialog-buttons {
+    display: flex; gap: 12px; justify-content: center;
+}
+
+.hint-dialog-buttons .cyber-btn {
+    padding: 8px 20px; font-size: 11px;
+}
+
+/* Hint Highlight Styles */
+.hint-highlight-row {
+    animation: hint-pulse 1s ease-in-out 3;
+}
+
+.hint-highlight-col {
+    animation: hint-pulse 1s ease-in-out 3;
+}
+
+.hint-highlight-cell {
+    animation: hint-cell-pulse 1s ease-in-out 3;
+    position: relative;
+}
+
+.hint-highlight-cell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    box-shadow: 0 0 10px var(--btn-hint-color, var(--neon-yellow, #ffcc00)), inset 0 0 10px rgba(255, 204, 0, 0.2);
+    pointer-events: none;
+    animation: hint-border-pulse 1s ease-in-out 3;
+}
+
+@keyframes hint-pulse {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: rgba(255, 204, 0, 0.15); }
+}
+
+@keyframes hint-cell-pulse {
+    0%, 100% { background-color: rgba(255, 204, 0, 0); }
+    50% { background-color: rgba(255, 204, 0, 0.25); }
+}
+
+@keyframes hint-border-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+/* Row/Column label highlight */
+.count-neon.hint-highlight-label {
+    animation: hint-label-pulse 1s ease-in-out 3;
+}
+
+@keyframes hint-label-pulse {
+    0%, 100% {
+        color: var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+        text-shadow: 0 0 5px var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    }
+    50% {
+        color: #fff;
+        text-shadow: 0 0 15px var(--btn-hint-color, var(--neon-yellow, #ffcc00)), 0 0 30px var(--btn-hint-color, var(--neon-yellow, #ffcc00));
+    }
+}
+
 .scan-lines {
     position: absolute; inset: 0; z-index: 1; pointer-events: none;
     background: repeating-linear-gradient(
@@ -1169,66 +1271,6 @@ body {
 
 .stockpile-image .stockpile-icon {
     display: none;
-}
-
-/* Garden theme specific overrides */
-.theme-garden .cyber-grid {
-    border-color: rgba(50, 205, 50, 0.6);
-    background: rgba(50, 205, 50, 0.15);
-}
-
-.theme-garden .header-strip {
-    border-bottom-color: rgba(50, 205, 50, 0.4);
-}
-
-/* Garden theme button colors are now handled via CSS variables */
-
-.theme-garden .briefing-modal {
-    border-color: var(--neon-green);
-    background: rgba(26, 47, 26, 0.95);
-}
-
-.theme-garden .briefing-header {
-    font-size: 1.4rem;
-}
-
-.theme-garden .victory-title {
-    color: var(--neon-green);
-    text-shadow: 0 0 20px var(--neon-green), 0 0 40px var(--neon-green);
-    font-family: var(--font-heading, 'Georgia', serif);
-}
-
-.theme-garden #victoryOverlay {
-    border-color: var(--neon-green);
-    box-shadow: inset 0 0 50px var(--neon-green);
-}
-
-.theme-garden .scan-lines {
-    background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(50, 205, 50, 0.03) 2px,
-        rgba(50, 205, 50, 0.03) 4px
-    );
-}
-
-.theme-garden .scan-lines::after {
-    background: linear-gradient(
-        180deg,
-        transparent 0%,
-        rgba(50, 205, 50, 0.1) 50%,
-        transparent 100%
-    );
-}
-
-/* Garden theme - softer, more organic feel */
-.theme-garden .cyber-grid {
-    border-radius: 8px;
-}
-
-.theme-garden .cell {
-    border-radius: 4px;
 }
 
 /* Opacity utility for dimmed layers */

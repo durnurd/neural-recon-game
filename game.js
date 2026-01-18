@@ -505,6 +505,7 @@ function updateSeedHistoryDisplay() {
 }
 
 // Debug flag for hint validation - set to true to log details about invalid hints
+// This is set to false during deploy by GitHub Actions
 const DEBUG_HINTS = true;
 
 // Assist mode settings - hierarchical toggle system
@@ -519,7 +520,8 @@ const assistSettings = {
         enabled: true,       // All auto-fill features
         deadEndFill: true,   // Auto-fill neighbors when clicking dead-ends
         wallCompletion: true,  // Auto-complete paths when walls are done (green headers)
-        pathCompletion: false  // Auto-complete walls when paths are done (blue headers) - off by default, very powerful
+        pathCompletion: false,  // Auto-complete walls when paths are done (blue headers) - off by default, very powerful
+        applyHints: false    // Auto-apply hint cells when hint button is pressed - off by default
     }
 };
 
@@ -538,6 +540,9 @@ function isWallCompletionEnabled() {
 }
 function isPathCompletionEnabled() {
     return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.pathCompletion;
+}
+function isApplyHintsEnabled() {
+    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.applyHints;
 }
 
 function saveUndoState() {
@@ -3616,6 +3621,343 @@ function hintCacheNearEdge(merged) {
     }
 }
 
+// Hint: If vault interior is complete (3x3 paths with single exit), remaining perimeter must be walls
+function hintVaultPerimeterComplete(merged) {
+    if (!stockpilePos) return null;
+
+    // Check all possible 3x3 vault positions containing the stockpile
+    for (let roomR = Math.max(0, stockpilePos.r - 2); roomR <= Math.min(stockpilePos.r, SIZE - 3); roomR++) {
+        for (let roomC = Math.max(0, stockpilePos.c - 2); roomC <= Math.min(stockpilePos.c, SIZE - 3); roomC++) {
+            // Check if stockpile is in this room
+            if (stockpilePos.r < roomR || stockpilePos.r > roomR + 2 ||
+                stockpilePos.c < roomC || stockpilePos.c > roomC + 2) continue;
+
+            // Check if all 9 interior cells are paths
+            let interiorComplete = true;
+            for (let dr = 0; dr < 3 && interiorComplete; dr++) {
+                for (let dc = 0; dc < 3 && interiorComplete; dc++) {
+                    const cr = roomR + dr, cc = roomC + dc;
+                    const idx = cr * SIZE + cc;
+                    const isStockpileCell = stockpilePos.r === cr && stockpilePos.c === cc;
+                    if (merged[idx] !== 2 && !isTargetDeadEnd(cr, cc) && !isStockpileCell) {
+                        interiorComplete = false;
+                    }
+                }
+            }
+            if (!interiorComplete) continue;
+
+            // Interior is complete - count doors (paths in perimeter) and find empty perimeter cells
+            let doorCount = 0;
+            const emptyPerimeter = [];
+
+            // Helper to check a perimeter cell
+            const checkPerimeter = (pr, pc) => {
+                if (pr < 0 || pr >= SIZE || pc < 0 || pc >= SIZE) return; // Edge of grid
+                const pIdx = pr * SIZE + pc;
+                if (merged[pIdx] === 2 || isFixedPath(pr, pc)) {
+                    doorCount++;
+                } else if (merged[pIdx] === 0 && !isFixedPath(pr, pc)) {
+                    emptyPerimeter.push({ r: pr, c: pc });
+                }
+            };
+
+            // Top perimeter (row above room)
+            if (roomR > 0) {
+                for (let dc = 0; dc < 3; dc++) checkPerimeter(roomR - 1, roomC + dc);
+            }
+            // Bottom perimeter (row below room)
+            if (roomR + 3 < SIZE) {
+                for (let dc = 0; dc < 3; dc++) checkPerimeter(roomR + 3, roomC + dc);
+            }
+            // Left perimeter (column left of room)
+            if (roomC > 0) {
+                for (let dr = 0; dr < 3; dr++) checkPerimeter(roomR + dr, roomC - 1);
+            }
+            // Right perimeter (column right of room)
+            if (roomC + 3 < SIZE) {
+                for (let dr = 0; dr < 3; dr++) checkPerimeter(roomR + dr, roomC + 3);
+            }
+
+            // If exactly 1 door and there are empty perimeter cells, they must be walls
+            if (doorCount === 1 && emptyPerimeter.length > 0) {
+                if (emptyPerimeter.length === 1) {
+                    const cell = emptyPerimeter[0];
+                    return {
+                        message: `Cell ${cellRef(cell.r, cell.c)} must be a wall. The vault interior is complete with one door, so the remaining perimeter must be sealed.`,
+                        highlight: { type: 'cell', r: cell.r, c: cell.c },
+                        cells: emptyPerimeter, shouldBe: 'wall'
+                    };
+                } else {
+                    const cellList = formatCellList(emptyPerimeter);
+                    return {
+                        message: `Cells ${cellList} must be walls. The vault interior is complete with one door, so the remaining perimeter must be sealed.`,
+                        highlight: { type: 'cells', cells: emptyPerimeter },
+                        cells: emptyPerimeter, shouldBe: 'wall'
+                    };
+                }
+            }
+        }
+    }
+    return null;
+}
+
+// Hint: If placing a wall/path would complete a row/column and cause an obvious error, cell must be opposite
+// Errors checked: 2x2 path block (outside vault), invalid dead end, dead end with multiple exits, disconnected paths
+function hintRowColCompletionCausesError(merged) {
+    // Helper to check if a 2x2 at (topR, topC) would be all paths in the test board
+    const would2x2BeAllPaths = (testBoard, topR, topC) => {
+        if (topR < 0 || topR + 1 >= SIZE || topC < 0 || topC + 1 >= SIZE) return false;
+        for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+            const cr = topR + dr, cc = topC + dc;
+            const idx = cr * SIZE + cc;
+            if (testBoard[idx] !== 2 && !isFixedPath(cr, cc)) return false;
+        }
+        // Check if near stockpile (2x2 paths allowed there)
+        if (stockpilePos) {
+            for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+                const cr = topR + dr, cc = topC + dc;
+                if (Math.abs(cr - stockpilePos.r) <= 1 && Math.abs(cc - stockpilePos.c) <= 1) {
+                    return false; // Near stockpile, 2x2 allowed
+                }
+            }
+        }
+        return true;
+    };
+
+    // Helper to check if cell would be an invalid dead end in test board
+    const wouldBeInvalidDeadEnd = (testBoard, r, c) => {
+        const idx = r * SIZE + c;
+        if (testBoard[idx] !== 2 && !isFixedPath(r, c)) return false;
+        if (isTargetDeadEnd(r, c)) return false;
+        let wallCount = 0;
+        for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+            const nr = r + dr, nc = c + dc;
+            if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) wallCount++;
+            else if (testBoard[nr * SIZE + nc] === 1) wallCount++;
+        }
+        return wallCount >= 3;
+    };
+
+    // Helper to check if a dead end would have multiple paths
+    const wouldDeadEndHaveMultiplePaths = (testBoard, r, c) => {
+        if (!isTargetDeadEnd(r, c)) return false;
+        let pathCount = 0;
+        for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+            const nr = r + dr, nc = c + dc;
+            if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+            const nIdx = nr * SIZE + nc;
+            if (testBoard[nIdx] === 2 || isFixedPath(nr, nc)) pathCount++;
+        }
+        return pathCount > 1;
+    };
+
+    // Helper to check if paths would be truly disconnected (separated by walls with no possible route)
+    // Paths are only "disconnected" if walls make it impossible to connect them - empty cells don't count
+    const wouldPathsBeDisconnected = (testBoard) => {
+        const pathCells = [];
+        for (let i = 0; i < SIZE * SIZE; i++) {
+            const r = Math.floor(i / SIZE), c = i % SIZE;
+            if (testBoard[i] === 2 || isFixedPath(r, c)) pathCells.push(i);
+        }
+        if (pathCells.length <= 1) return false;
+
+        // BFS from first path cell, traversing through paths AND empty cells (not walls)
+        // This checks if all path cells are in the same "reachable region"
+        const visited = new Set();
+        const stack = [pathCells[0]];
+        visited.add(pathCells[0]);
+
+        while (stack.length > 0) {
+            const idx = stack.pop();
+            const r = Math.floor(idx / SIZE), c = idx % SIZE;
+            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                    const nIdx = nr * SIZE + nc;
+                    // Can traverse through non-wall cells (paths or empty)
+                    if (!visited.has(nIdx) && testBoard[nIdx] !== 1) {
+                        visited.add(nIdx);
+                        stack.push(nIdx);
+                    }
+                }
+            }
+        }
+
+        // Check if all path cells were reached
+        for (const pathIdx of pathCells) {
+            if (!visited.has(pathIdx)) return true; // This path cell is unreachable - truly disconnected
+        }
+        return false;
+    };
+
+    // Check what errors would occur after filling a row/column
+    const checkForErrors = (testBoard, filledCells, fillType) => {
+        // Check each filled cell and its neighbors for errors
+        for (const cell of filledCells) {
+            const { r, c } = cell;
+
+            if (fillType === 2) { // Filled with paths
+                // Check for 2x2 path blocks involving this cell
+                for (const [dr, dc] of [[0, 0], [0, -1], [-1, 0], [-1, -1]]) {
+                    if (would2x2BeAllPaths(testBoard, r + dr, c + dc)) {
+                        return { type: '2x2', r, c };
+                    }
+                }
+                // Check if this cell becomes an invalid dead end
+                if (wouldBeInvalidDeadEnd(testBoard, r, c)) {
+                    return { type: 'invalid-dead-end', r, c };
+                }
+            }
+
+            if (fillType === 1) { // Filled with walls
+                // Check neighbors for invalid dead ends
+                for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                        if (wouldBeInvalidDeadEnd(testBoard, nr, nc)) {
+                            return { type: 'invalid-dead-end', r: nr, c: nc };
+                        }
+                    }
+                }
+            }
+
+            // Check adjacent dead ends for multiple paths
+            for (const [dr, dc] of [[0, 0], [0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                    if (wouldDeadEndHaveMultiplePaths(testBoard, nr, nc)) {
+                        return { type: 'dead-end-multiple', r: nr, c: nc };
+                    }
+                }
+            }
+        }
+
+        // Check for disconnected paths (only if we added walls)
+        if (fillType === 1 && wouldPathsBeDisconnected(testBoard)) {
+            return { type: 'disconnected' };
+        }
+
+        return null;
+    };
+
+    // Try each empty cell
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const idx = r * SIZE + c;
+            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+
+            // Check if locked by lower layer
+            const isLocked = layers.slice(0, currentIdx).some(l => l[idx] !== 0);
+            if (isLocked) continue;
+
+            // Try placing a wall here
+            for (const tryType of [1, 2]) { // 1 = wall, 2 = path
+                const testBoard = [...merged];
+                testBoard[idx] = tryType;
+
+                // Check row completion
+                const rowCounts = getRowCounts(testBoard, r);
+                let rowWouldComplete = false;
+                let rowFillType = 0;
+                let rowEmptyCells = [];
+
+                if (rowCounts.walls === rowCounts.target) {
+                    // Row walls complete - remaining empty cells become paths
+                    rowWouldComplete = true;
+                    rowFillType = 2;
+                    for (let cc = 0; cc < SIZE; cc++) {
+                        if (testBoard[r * SIZE + cc] === 0 && !isFixedPath(r, cc)) {
+                            rowEmptyCells.push({ r, c: cc });
+                        }
+                    }
+                } else if (rowCounts.paths === rowCounts.expectedPaths) {
+                    // Row paths complete - remaining empty cells become walls
+                    rowWouldComplete = true;
+                    rowFillType = 1;
+                    for (let cc = 0; cc < SIZE; cc++) {
+                        if (testBoard[r * SIZE + cc] === 0 && !isFixedPath(r, cc)) {
+                            rowEmptyCells.push({ r, c: cc });
+                        }
+                    }
+                }
+
+                if (rowWouldComplete && rowEmptyCells.length > 0) {
+                    // Simulate filling the row
+                    const rowTestBoard = [...testBoard];
+                    for (const cell of rowEmptyCells) {
+                        rowTestBoard[cell.r * SIZE + cell.c] = rowFillType;
+                    }
+                    const error = checkForErrors(rowTestBoard, rowEmptyCells, rowFillType);
+                    if (error) {
+                        const opposite = tryType === 1 ? 'path' : 'wall';
+                        const placed = tryType === 1 ? 'wall' : 'path';
+                        let reason = '';
+                        if (error.type === '2x2') reason = 'it would create a 2×2 path block';
+                        else if (error.type === 'invalid-dead-end') reason = `it would trap ${cellRef(error.r, error.c)} as a dead end`;
+                        else if (error.type === 'dead-end-multiple') reason = `it would give the dead end at ${cellRef(error.r, error.c)} multiple exits`;
+                        else if (error.type === 'disconnected') reason = 'it would disconnect the path network';
+
+                        return {
+                            message: `Cell ${cellRef(r, c)} must be a ${opposite}. Placing a ${placed} would complete row ${rowToNumber(r)}, but ${reason}.`,
+                            highlight: { type: 'cell', r, c },
+                            cells: [{ r, c }], shouldBe: opposite
+                        };
+                    }
+                }
+
+                // Check column completion
+                const colCounts = getColCounts(testBoard, c);
+                let colWouldComplete = false;
+                let colFillType = 0;
+                let colEmptyCells = [];
+
+                if (colCounts.walls === colCounts.target) {
+                    colWouldComplete = true;
+                    colFillType = 2;
+                    for (let rr = 0; rr < SIZE; rr++) {
+                        if (testBoard[rr * SIZE + c] === 0 && !isFixedPath(rr, c)) {
+                            colEmptyCells.push({ r: rr, c });
+                        }
+                    }
+                } else if (colCounts.paths === colCounts.expectedPaths) {
+                    colWouldComplete = true;
+                    colFillType = 1;
+                    for (let rr = 0; rr < SIZE; rr++) {
+                        if (testBoard[rr * SIZE + c] === 0 && !isFixedPath(rr, c)) {
+                            colEmptyCells.push({ r: rr, c });
+                        }
+                    }
+                }
+
+                if (colWouldComplete && colEmptyCells.length > 0) {
+                    const colTestBoard = [...testBoard];
+                    for (const cell of colEmptyCells) {
+                        colTestBoard[cell.r * SIZE + cell.c] = colFillType;
+                    }
+                    const error = checkForErrors(colTestBoard, colEmptyCells, colFillType);
+                    if (error) {
+                        const opposite = tryType === 1 ? 'path' : 'wall';
+                        const placed = tryType === 1 ? 'wall' : 'path';
+                        let reason = '';
+                        if (error.type === '2x2') reason = 'it would create a 2×2 path block';
+                        else if (error.type === 'invalid-dead-end') reason = `it would trap ${cellRef(error.r, error.c)} as a dead end`;
+                        else if (error.type === 'dead-end-multiple') reason = `it would give the dead end at ${cellRef(error.r, error.c)} multiple exits`;
+                        else if (error.type === 'disconnected') reason = 'it would disconnect the path network';
+
+                        return {
+                            message: `Cell ${cellRef(r, c)} must be a ${opposite}. Placing a ${placed} would complete column ${colToLetter(c)}, but ${reason}.`,
+                            highlight: { type: 'cell', r, c },
+                            cells: [{ r, c }], shouldBe: opposite
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
 // Hint: Empty cell surrounded by 3+ walls must be a wall
 // An empty cell with 3+ walls around it cannot be a path (would be an invalid dead end)
 function hintEmptyDeadEndMustBeWall(merged) {
@@ -3660,6 +4002,81 @@ function hint2x2With3Paths(merged) {
             highlight: { type: 'cell', r: cell.r, c: cell.c },
             cells: [cell], shouldBe: 'wall'
         };
+    }
+    return null;
+}
+
+// Hint: Forced wall via "dead-end or 2x2" squeeze
+// If an empty cell has exactly 2 walls and 1 path around it, then (if it were a path)
+// the remaining neighbor would need to be a path to avoid an invalid dead end.
+// If making that neighbor a path would complete a forbidden 2x2 path block, the cell must be a wall.
+function hintDeadEndOr2x2Squeeze(merged) {
+    const dirs = [
+        { name: 'up', dr: -1, dc: 0 },
+        { name: 'right', dr: 0, dc: 1 },
+        { name: 'down', dr: 1, dc: 0 },
+        { name: 'left', dr: 0, dc: -1 }
+    ];
+
+    const isWall = (r, c) => {
+        if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return true; // edge counts as wall
+        return merged[r * SIZE + c] === 1;
+    };
+    const isPath = (r, c) => {
+        if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return false;
+        return merged[r * SIZE + c] === 2 || isFixedPath(r, c);
+    };
+    const isEmpty = (r, c) => {
+        if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return false;
+        return merged[r * SIZE + c] === 0 && !isFixedPath(r, c);
+    };
+
+    const is2x2AllowedHere = (cells) => {
+        // 2x2 paths are allowed in/near the data cache room (within 1 of stockpile)
+        if (!stockpilePos) return false;
+        return cells.some(cell => Math.abs(cell.r - stockpilePos.r) <= 1 && Math.abs(cell.c - stockpilePos.c) <= 1);
+    };
+
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const idx = r * SIZE + c;
+            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+            // If this is a target dead end node, being boxed in is allowed, so this inference isn't valid.
+            if (isTargetDeadEnd(r, c)) continue;
+
+            const wallDirs = [];
+            const pathDirs = [];
+            const emptyDirs = [];
+
+            for (const d of dirs) {
+                const nr = r + d.dr, nc = c + d.dc;
+                if (isWall(nr, nc)) wallDirs.push(d);
+                else if (isPath(nr, nc)) pathDirs.push(d);
+                else if (isEmpty(nr, nc)) emptyDirs.push(d);
+            }
+
+            if (wallDirs.length !== 2 || pathDirs.length !== 1 || emptyDirs.length !== 1) continue;
+
+            const pathDir = pathDirs[0];
+            const emptyDir = emptyDirs[0];
+            // Need a corner (perpendicular) so that making the empty neighbor a path could form a 2x2.
+            if (pathDir.dr * emptyDir.dr + pathDir.dc * emptyDir.dc !== 0) continue;
+
+            const xCell = { r: r + emptyDir.dr, c: c + emptyDir.dc };
+            const diag = { r: r + pathDir.dr + emptyDir.dr, c: c + pathDir.dc + emptyDir.dc };
+            // The diagonal must exist and already be a path for the 2x2 to be forced.
+            if (!isPath(diag.r, diag.c)) continue;
+
+            const pCell = { r: r + pathDir.dr, c: c + pathDir.dc };
+            const square = [{ r, c }, xCell, pCell, diag];
+            if (is2x2AllowedHere(square)) continue;
+
+            return {
+                message: `Cell ${cellRef(r, c)} must be a wall. If it were a path, it would need to connect to ${cellRef(xCell.r, xCell.c)} to avoid becoming an invalid dead end, but that would create a 2×2 block of paths.`,
+                highlight: { type: 'cell', r, c },
+                cells: [{ r, c }], shouldBe: 'wall'
+            };
+        }
     }
     return null;
 }
@@ -3726,28 +4143,58 @@ function hintPathMustExtend(merged) {
 // Hint 5: Corner with two flanking dead ends must be a wall
 // E.g., if A2 and B1 are dead ends, A1 must be a wall (a path there would be cut off)
 function hintCornerFlankingDeadEnds(merged) {
-    // Check all four corners
-    const corners = [
-        { r: 0, c: 0, flank1: { r: 0, c: 1 }, flank2: { r: 1, c: 0 } },           // Top-left
-        { r: 0, c: SIZE - 1, flank1: { r: 0, c: SIZE - 2 }, flank2: { r: 1, c: SIZE - 1 } }, // Top-right
-        { r: SIZE - 1, c: 0, flank1: { r: SIZE - 1, c: 1 }, flank2: { r: SIZE - 2, c: 0 } }, // Bottom-left
-        { r: SIZE - 1, c: SIZE - 1, flank1: { r: SIZE - 1, c: SIZE - 2 }, flank2: { r: SIZE - 2, c: SIZE - 1 } } // Bottom-right
-    ];
+    // Check all cells for "corner" patterns where two perpendicular directions
+    // are blocked (by walls or grid edges) and the other two have dead ends
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const idx = r * SIZE + c;
 
-    for (const corner of corners) {
-        const { r, c, flank1, flank2 } = corner;
-        const idx = r * SIZE + c;
+            // Only check empty cells
+            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
 
-        // Only check if corner is empty
-        if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+            // Check each orthogonal direction
+            const dirs = [
+                { dr: -1, dc: 0 }, // North
+                { dr: 1, dc: 0 },  // South
+                { dr: 0, dc: -1 }, // West
+                { dr: 0, dc: 1 }   // East
+            ];
 
-        // Check if both flanking cells are dead ends
-        if (isTargetDeadEnd(flank1.r, flank1.c) && isTargetDeadEnd(flank2.r, flank2.c)) {
-            return {
-                message: `Cell ${cellRef(r, c)} must be a wall. The dead ends at ${cellRef(flank1.r, flank1.c)} and ${cellRef(flank2.r, flank2.c)} would cut off a path there.`,
-                highlight: { type: 'cell', r, c },
-                cells: [{ r, c }], shouldBe: 'wall'
-            };
+            const blocked = []; // directions blocked by wall or edge
+            const deadEnds = []; // directions with dead ends
+
+            for (const dir of dirs) {
+                const nr = r + dir.dr;
+                const nc = c + dir.dc;
+
+                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
+                    // Edge of grid - blocked
+                    blocked.push(dir);
+                } else if (merged[nr * SIZE + nc] === 1) {
+                    // Wall - blocked
+                    blocked.push(dir);
+                } else if (isTargetDeadEnd(nr, nc)) {
+                    // Dead end
+                    deadEnds.push({ r: nr, c: nc });
+                }
+            }
+
+            // Need exactly 2 blocked directions and 2 dead end directions
+            if (blocked.length !== 2 || deadEnds.length !== 2) continue;
+
+            // Check if blocked directions are perpendicular (not opposite)
+            // Perpendicular means one is vertical (dr !== 0) and one is horizontal (dc !== 0)
+            const b1Vertical = blocked[0].dr !== 0;
+            const b2Vertical = blocked[1].dr !== 0;
+
+            if (b1Vertical !== b2Vertical) {
+                // They are perpendicular - this forms a corner
+                return {
+                    message: `Cell ${cellRef(r, c)} must be a wall. The dead ends at ${cellRef(deadEnds[0].r, deadEnds[0].c)} and ${cellRef(deadEnds[1].r, deadEnds[1].c)} would cut off a path there.`,
+                    highlight: { type: 'cell', r, c },
+                    cells: [{ r, c }], shouldBe: 'wall'
+                };
+            }
         }
     }
     return null;
@@ -3963,7 +4410,11 @@ function hintFork() {
 // Validate a hint by checking if suggested cells match the solution
 // Returns true if valid, false if invalid
 // Hints can include: { cells: [{r, c}], shouldBe: 'wall'|'path' } for validation
+// When in a fork (currentIdx > 0), skip validation - we'll detect contradictions instead
 function validateHint(hint, hintName) {
+    // In a fork, skip validation - let hints proceed and detect contradictions later
+    if (currentIdx > 0) return true;
+
     if (!hint || !hint.cells || !hint.shouldBe) return true; // No validation data, assume valid
 
     const expectedValue = hint.shouldBe === 'wall' ? 1 : 0; // solution uses 1=wall, 0=path
@@ -3986,25 +4437,166 @@ function validateHint(hint, hintName) {
     return true;
 }
 
+// Hint: Detect contradiction in fork - the original assumption must be wrong
+// This checks if the fork has led to an obvious error, meaning the fork anchor should be the opposite
+function hintForkContradiction(merged) {
+    if (currentIdx === 0) return null; // Only applies in forks
+
+    const fa = forkAnchors[currentIdx];
+    if (!fa) return null; // No anchor set yet
+
+    // Check for obvious contradictions (same checks as hintCheckMistakes)
+    // 1. Invalid dead end (path boxed in by 3+ walls that isn't a dead end node)
+    const invalidDeadEnd = findInvalidDeadEnd(merged);
+    if (invalidDeadEnd) {
+        return buildForkContradictionHint(fa, 'a path got boxed in as an invalid dead end');
+    }
+
+    // 2. Row/column over limit
+    for (let r = 0; r < SIZE; r++) {
+        const { walls, paths, target, expectedPaths } = getRowCounts(merged, r);
+        if (walls > target) {
+            return buildForkContradictionHint(fa, `row ${rowToNumber(r)} has too many walls`);
+        }
+        if (paths > expectedPaths) {
+            return buildForkContradictionHint(fa, `row ${rowToNumber(r)} has too many paths`);
+        }
+    }
+    for (let c = 0; c < SIZE; c++) {
+        const { walls, paths, target, expectedPaths } = getColCounts(merged, c);
+        if (walls > target) {
+            return buildForkContradictionHint(fa, `column ${colToLetter(c)} has too many walls`);
+        }
+        if (paths > expectedPaths) {
+            return buildForkContradictionHint(fa, `column ${colToLetter(c)} has too many paths`);
+        }
+    }
+
+    // 3. 2x2 path block (outside vault)
+    for (let r = 0; r < SIZE - 1; r++) {
+        for (let c = 0; c < SIZE - 1; c++) {
+            let allPaths = true;
+            let nearStockpile = false;
+            for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]]) {
+                const cr = r + dr, cc = c + dc;
+                const idx = cr * SIZE + cc;
+                if (merged[idx] !== 2 && !isFixedPath(cr, cc)) allPaths = false;
+                if (stockpilePos && Math.abs(cr - stockpilePos.r) <= 1 && Math.abs(cc - stockpilePos.c) <= 1) {
+                    nearStockpile = true;
+                }
+            }
+            if (allPaths && !nearStockpile) {
+                return buildForkContradictionHint(fa, 'a 2×2 path block was created');
+            }
+        }
+    }
+
+    // 4. Dead end with multiple paths
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            if (!isTargetDeadEnd(r, c)) continue;
+            let pathCount = 0;
+            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) continue;
+                const nIdx = nr * SIZE + nc;
+                if (merged[nIdx] === 2 || isFixedPath(nr, nc)) pathCount++;
+            }
+            if (pathCount > 1) {
+                return buildForkContradictionHint(fa, `the dead end at ${cellRef(r, c)} has multiple exits`);
+            }
+        }
+    }
+
+    // 5. Cut-off section of the grid (walls separating regions so paths can't connect)
+    // Check if all non-wall cells are reachable from each other
+    const nonWallCells = [];
+    for (let i = 0; i < SIZE * SIZE; i++) {
+        if (merged[i] !== 1) nonWallCells.push(i);
+    }
+    if (nonWallCells.length > 1) {
+        const visited = new Set();
+        const stack = [nonWallCells[0]];
+        visited.add(nonWallCells[0]);
+
+        while (stack.length > 0) {
+            const idx = stack.pop();
+            const r = Math.floor(idx / SIZE), c = idx % SIZE;
+            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nr = r + dr, nc = c + dc;
+                if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE) {
+                    const nIdx = nr * SIZE + nc;
+                    if (!visited.has(nIdx) && merged[nIdx] !== 1) {
+                        visited.add(nIdx);
+                        stack.push(nIdx);
+                    }
+                }
+            }
+        }
+
+        if (visited.size < nonWallCells.length) {
+            return buildForkContradictionHint(fa, 'a section of the grid got cut off by walls');
+        }
+    }
+
+    return null;
+}
+
+// Helper to build the fork contradiction hint message
+function buildForkContradictionHint(fa, reason) {
+    let anchorDesc = '';
+    let opposite = '';
+    let highlight = null;
+
+    if (fa.type === 'cell') {
+        const r = Math.floor(fa.idx / SIZE);
+        const c = fa.idx % SIZE;
+        const currentLayer = layers[currentIdx];
+        const cellValue = currentLayer[fa.idx];
+        opposite = cellValue === 1 ? 'path' : 'wall';
+        anchorDesc = `${cellRef(r, c)} as a ${cellValue === 1 ? 'wall' : 'path'}`;
+        highlight = { type: 'cell', r, c };
+    } else if (fa.type === 'row') {
+        anchorDesc = `filling row ${rowToNumber(fa.index)}`;
+        highlight = { type: 'row', index: fa.index };
+        opposite = 'the opposite';
+    } else if (fa.type === 'col') {
+        anchorDesc = `filling column ${colToLetter(fa.index)}`;
+        highlight = { type: 'col', index: fa.index };
+        opposite = 'the opposite';
+    }
+
+    return {
+        message: `Contradiction: ${reason}. Your assumption of ${anchorDesc} must be wrong. Discard this fork and place ${opposite} instead.`,
+        highlight: highlight,
+        noAutoApply: true // Don't auto-apply this hint
+    };
+}
+
 // Main hint function - returns the first applicable hint
 function getHint() {
     const merged = getMergedBoard();
     const inFork = currentIdx > 0;
 
     // Run hints in priority order
-    // When in a fork, only report obvious mistakes (not "unknown error somewhere")
+    // When in a fork, check for contradictions first (which means the fork assumption was wrong)
+    // Then check for obvious mistakes (not "unknown error somewhere")
     const hintFunctions = [
+        { name: 'hintForkContradiction', fn: () => hintForkContradiction(merged) },
         { name: 'hintCheckMistakes', fn: () => hintCheckMistakes(merged, inFork) },
-        { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
         { name: 'hintDeadEndCanBeFinished', fn: () => hintDeadEndCanBeFinished(merged) },
         { name: 'hintCacheNearEdge', fn: () => hintCacheNearEdge(merged) },
+        { name: 'hintVaultPerimeterComplete', fn: () => hintVaultPerimeterComplete(merged) },
         { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
         { name: 'hintPathMustExtend', fn: () => hintPathMustExtend(merged) },
         { name: 'hint2x2With3Paths', fn: () => hint2x2With3Paths(merged) },
+        { name: 'hintDeadEndOr2x2Squeeze', fn: () => hintDeadEndOr2x2Squeeze(merged) },
         { name: 'hintCornerFlankingDeadEnds', fn: () => hintCornerFlankingDeadEnds(merged) },
         { name: 'hintEdgeDeadEndOneWall', fn: () => hintEdgeDeadEndOneWall(merged) },
         { name: 'hintEdgeCornerDeadEnd', fn: () => hintEdgeCornerDeadEnd(merged) },
         { name: 'hintDeadEndAdjacent', fn: () => hintDeadEndAdjacent(merged) },
+        { name: 'hintRowColCompletionCausesError', fn: () => hintRowColCompletionCausesError(merged) },
+        { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
         { name: 'hintFork', fn: () => hintFork() }
     ];
 
@@ -4200,12 +4792,65 @@ document.getElementById('hintToast').onclick = () => {
     hideHintToast();
 };
 
+// Apply hint cells to the board (used when Apply Hints setting is enabled)
+function applyHintCells(hint) {
+    if (!hint || !hint.cells || !hint.shouldBe) return false;
+    if (hint.noAutoApply) return false; // Some hints should not be auto-applied (e.g., fork contradictions)
+
+    const fillValue = hint.shouldBe === 'wall' ? 1 : 2; // 1 = wall, 2 = path
+    const merged = getMergedBoard();
+    let appliedAny = false;
+
+    for (const cell of hint.cells) {
+        const idx = cell.r * SIZE + cell.c;
+
+        // Skip if cell is already filled
+        if (merged[idx] !== 0) continue;
+
+        // Skip fixed paths (dead ends, stockpile)
+        if (isFixedPath(cell.r, cell.c)) continue;
+
+        // Skip if locked by lower layer
+        const isLocked = layers.slice(0, currentIdx).some(l => l[idx] !== 0);
+        if (isLocked) continue;
+
+        // Set fork anchor on first cell we apply in a fork layer
+        if (currentIdx > 0 && forkAnchors[currentIdx] === null) {
+            forkAnchors[currentIdx] = {type: 'cell', idx: idx};
+        }
+
+        // Apply the fill
+        layers[currentIdx][idx] = fillValue;
+        appliedAny = true;
+    }
+
+    if (appliedAny) {
+        // Play appropriate sound
+        if (fillValue === 1) {
+            ChipSound.wall();
+        } else {
+            ChipSound.path();
+        }
+        moveCount++;
+        update();
+    }
+
+    return appliedAny;
+}
+
 // Hint button click handler
 document.getElementById('hintBtn').onclick = () => {
     if (isWon) return;
     ChipSound.click();
     clearHintHighlights();
     const hint = getHint();
+
+    // If Apply Hints is enabled and hint has cells to apply, apply them
+    if (isApplyHintsEnabled() && hint && hint.cells && hint.shouldBe) {
+        saveUndoState();
+        applyHintCells(hint);
+    }
+
     showHint(hint);
 };
 // Cookie helper functions for briefing preference
@@ -4370,6 +5015,7 @@ function updateAssistUI() {
     updateToggleUI('deadEndFillBtn', 'deadEndFillState', assistSettings.autoFill.deadEndFill);
     updateToggleUI('wallCompletionBtn', 'wallCompletionState', assistSettings.autoFill.wallCompletion);
     updateToggleUI('pathCompletionBtn', 'pathCompletionState', assistSettings.autoFill.pathCompletion);
+    updateToggleUI('applyHintsBtn', 'applyHintsState', assistSettings.autoFill.applyHints);
 }
 
 // Propagate state changes down the hierarchy
@@ -4400,7 +5046,7 @@ function updateParentStates() {
     // Update visualHints.enabled based on children
     assistSettings.visualHints.enabled = assistSettings.visualHints.errorIndicators || assistSettings.visualHints.progressIndicators;
     // Update autoFill.enabled based on children
-    assistSettings.autoFill.enabled = assistSettings.autoFill.deadEndFill || assistSettings.autoFill.wallCompletion || assistSettings.autoFill.pathCompletion;
+    assistSettings.autoFill.enabled = assistSettings.autoFill.deadEndFill || assistSettings.autoFill.wallCompletion || assistSettings.autoFill.pathCompletion || assistSettings.autoFill.applyHints;
     // Update master enabled based on children
     assistSettings.enabled = assistSettings.visualHints.enabled || assistSettings.autoFill.enabled;
 }
@@ -4503,6 +5149,14 @@ document.getElementById('pathCompletionBtn').onclick = () => {
     saveAssistSettings();
     updateAssistUI();
     update();
+};
+
+document.getElementById('applyHintsBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.autoFill.applyHints = !assistSettings.autoFill.applyHints;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
 };
 
 // Setup expand sections

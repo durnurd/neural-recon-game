@@ -19,7 +19,6 @@ const ThemeManager = (() => {
                 return;
             }
             themes[theme.id] = theme;
-            console.log(`Theme registered: ${theme.id}`);
         },
         
         /**
@@ -82,7 +81,6 @@ const ThemeManager = (() => {
             // Notify listeners
             onThemeChangeCallbacks.forEach(cb => cb(theme, previousTheme));
             
-            console.log(`Theme activated: ${theme.name}`);
             return true;
         },
         

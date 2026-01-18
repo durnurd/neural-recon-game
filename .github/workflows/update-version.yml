@@ -26,13 +26,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inject version into index.html and service-worker.js
+      - name: Inject version and disable debug flags
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           VERSION="v1.${{ github.run_number }}.${SHORT_SHA}"
           echo "Injecting version: $VERSION"
           sed -i "s|<div class=\"menu-version\">v[^<]*</div>|<div class=\"menu-version\">$VERSION</div>|g" index.html
           sed -i "s|neural-recon-v[^']*|neural-recon-$VERSION|g" service-worker.js
+          sed -i "s|const DEBUG_HINTS = true;|const DEBUG_HINTS = false;|g" game.js
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

@@ -1501,8 +1501,25 @@ function tryAddSecretRoom() {
         }
     }
 
-    // Shuffle within priority groups
-    candidates.sort((a, b) => a.priority - b.priority || seededRandom() - 0.5);
+    // Sort by priority, then shuffle within each priority group using Fisher-Yates
+    // (Using seededRandom in sort comparator is non-deterministic across platforms)
+    candidates.sort((a, b) => a.priority - b.priority);
+
+    // Fisher-Yates shuffle within priority groups
+    let groupStart = 0;
+    while (groupStart < candidates.length) {
+        const currentPriority = candidates[groupStart].priority;
+        let groupEnd = groupStart;
+        while (groupEnd < candidates.length && candidates[groupEnd].priority === currentPriority) {
+            groupEnd++;
+        }
+        // Shuffle from groupStart to groupEnd-1
+        for (let i = groupEnd - 1; i > groupStart; i--) {
+            const j = groupStart + Math.floor(seededRandom() * (i - groupStart + 1));
+            [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+        }
+        groupStart = groupEnd;
+    }
 
     for (const {r, c} of candidates) {
         // Restore original solution for each attempt

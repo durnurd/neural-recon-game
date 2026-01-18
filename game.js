@@ -504,6 +504,9 @@ function updateSeedHistoryDisplay() {
     });
 }
 
+// Debug flag for hint validation - set to true to log details about invalid hints
+const DEBUG_HINTS = true;
+
 // Assist mode settings - hierarchical toggle system
 const assistSettings = {
     enabled: true,           // Master toggle
@@ -3371,20 +3374,22 @@ function hintRowColComplete(merged) {
         const emptyCells = [];
         for (let c = 0; c < SIZE; c++) {
             const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push(c);
+            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
         }
         if (emptyCells.length === 0) continue;
 
         if (walls === target) {
             return {
                 message: `Row ${rowToNumber(r)} has all its walls. The remaining cells must be paths.`,
-                highlight: { type: 'row', index: r }
+                highlight: { type: 'row', index: r },
+                cells: emptyCells, shouldBe: 'path'
             };
         }
         if (paths === expectedPaths) {
             return {
                 message: `Row ${rowToNumber(r)} has all its paths. The remaining cells must be walls.`,
-                highlight: { type: 'row', index: r }
+                highlight: { type: 'row', index: r },
+                cells: emptyCells, shouldBe: 'wall'
             };
         }
     }
@@ -3396,20 +3401,22 @@ function hintRowColComplete(merged) {
         const emptyCells = [];
         for (let r = 0; r < SIZE; r++) {
             const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push(r);
+            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
         }
         if (emptyCells.length === 0) continue;
 
         if (walls === target) {
             return {
                 message: `Column ${colToLetter(c)} has all its walls. The remaining cells must be paths.`,
-                highlight: { type: 'col', index: c }
+                highlight: { type: 'col', index: c },
+                cells: emptyCells, shouldBe: 'path'
             };
         }
         if (paths === expectedPaths) {
             return {
                 message: `Column ${colToLetter(c)} has all its paths. The remaining cells must be walls.`,
-                highlight: { type: 'col', index: c }
+                highlight: { type: 'col', index: c },
+                cells: emptyCells, shouldBe: 'wall'
             };
         }
     }
@@ -3454,7 +3461,8 @@ function hintDeadEndCanBeFinished(merged) {
                     message: `${cellWord} ${cellList} ${mustWord} be ${wallWord}. The dead end at ${cellRef(r, c)} already has its one path.`,
                     highlight: emptyCount === 1
                         ? { type: 'cell', r: emptyCells[0].r, c: emptyCells[0].c }
-                        : { type: 'cells', cells: emptyCells }
+                        : { type: 'cells', cells: emptyCells },
+                    cells: emptyCells, shouldBe: 'wall'
                 };
             }
 
@@ -3463,7 +3471,8 @@ function hintDeadEndCanBeFinished(merged) {
                 const cell = emptyCells[0];
                 return {
                     message: `Cell ${cellRef(cell.r, cell.c)} must be a path. It's the only way to connect the dead end at ${cellRef(r, c)}.`,
-                    highlight: { type: 'cell', r: cell.r, c: cell.c }
+                    highlight: { type: 'cell', r: cell.r, c: cell.c },
+                    cells: [cell], shouldBe: 'path'
                 };
             }
         }
@@ -3577,13 +3586,15 @@ function hintCacheNearEdge(merged) {
         const cell = guaranteedPaths[0];
         return {
             message: `Cell ${cellRef(cell.r, cell.c)} must be a path. Any valid vault containing the data cache must include this cell.`,
-            highlight: { type: 'cell', r: cell.r, c: cell.c }
+            highlight: { type: 'cell', r: cell.r, c: cell.c },
+            cells: guaranteedPaths, shouldBe: 'path'
         };
     } else {
         const cellList = formatCellList(guaranteedPaths);
         return {
             message: `Cells ${cellList} must be paths. Any valid vault containing the data cache must include these cells.`,
-            highlight: { type: 'cells', cells: guaranteedPaths }
+            highlight: { type: 'cells', cells: guaranteedPaths },
+            cells: guaranteedPaths, shouldBe: 'path'
         };
     }
 }
@@ -3594,7 +3605,8 @@ function hint2x2With3Paths(merged) {
     if (cell) {
         return {
             message: `Cell ${cellRef(cell.r, cell.c)} must be a wall to prevent a 2×2 path block.`,
-            highlight: { type: 'cell', r: cell.r, c: cell.c }
+            highlight: { type: 'cell', r: cell.r, c: cell.c },
+            cells: [cell], shouldBe: 'wall'
         };
     }
     return null;
@@ -3639,7 +3651,8 @@ function hintPathMustExtend(merged) {
                 const cell = emptyCells[0];
                 return {
                     message: `Cell ${cellRef(cell.r, cell.c)} must be a path. Otherwise the path at ${cellRef(r, c)} would be a dead end.`,
-                    highlight: { type: 'cell', r: cell.r, c: cell.c }
+                    highlight: { type: 'cell', r: cell.r, c: cell.c },
+                    cells: [cell], shouldBe: 'path'
                 };
             }
 
@@ -3649,7 +3662,8 @@ function hintPathMustExtend(merged) {
                 const cell = emptyCells[0];
                 return {
                     message: `Cell ${cellRef(cell.r, cell.c)} must be a path. The path at ${cellRef(r, c)} needs another connection.`,
-                    highlight: { type: 'cell', r: cell.r, c: cell.c }
+                    highlight: { type: 'cell', r: cell.r, c: cell.c },
+                    cells: [cell], shouldBe: 'path'
                 };
             }
         }
@@ -3679,7 +3693,8 @@ function hintCornerFlankingDeadEnds(merged) {
         if (isTargetDeadEnd(flank1.r, flank1.c) && isTargetDeadEnd(flank2.r, flank2.c)) {
             return {
                 message: `Cell ${cellRef(r, c)} must be a wall. The dead ends at ${cellRef(flank1.r, flank1.c)} and ${cellRef(flank2.r, flank2.c)} would cut off a path there.`,
-                highlight: { type: 'cell', r, c }
+                highlight: { type: 'cell', r, c },
+                cells: [{ r, c }], shouldBe: 'wall'
             };
         }
     }
@@ -3707,7 +3722,8 @@ function hintEdgeCornerDeadEnd(merged) {
             if (merged[r * SIZE + checkC] === 0 && !isFixedPath(r, checkC)) {
                 return {
                     message: `Cell ${cellRef(r, checkC)} must be a path. A wall there would trap cell ${cellRef(r, 0)} as a dead end.`,
-                    highlight: { type: 'cell', r, c: checkC }
+                    highlight: { type: 'cell', r, c: checkC },
+                    cells: [{ r, c: checkC }], shouldBe: 'path'
                 };
             }
         }
@@ -3720,7 +3736,8 @@ function hintEdgeCornerDeadEnd(merged) {
             if (merged[r * SIZE + checkC] === 0 && !isFixedPath(r, checkC)) {
                 return {
                     message: `Cell ${cellRef(r, checkC)} must be a path. A wall there would trap cell ${cellRef(r, SIZE - 1)} as a dead end.`,
-                    highlight: { type: 'cell', r, c: checkC }
+                    highlight: { type: 'cell', r, c: checkC },
+                    cells: [{ r, c: checkC }], shouldBe: 'path'
                 };
             }
         }
@@ -3739,7 +3756,8 @@ function hintEdgeCornerDeadEnd(merged) {
             if (merged[checkR * SIZE + c] === 0 && !isFixedPath(checkR, c)) {
                 return {
                     message: `Cell ${cellRef(checkR, c)} must be a path. A wall there would trap cell ${cellRef(0, c)} as a dead end.`,
-                    highlight: { type: 'cell', r: checkR, c }
+                    highlight: { type: 'cell', r: checkR, c },
+                    cells: [{ r: checkR, c }], shouldBe: 'path'
                 };
             }
         }
@@ -3751,7 +3769,8 @@ function hintEdgeCornerDeadEnd(merged) {
             if (merged[checkR * SIZE + c] === 0 && !isFixedPath(checkR, c)) {
                 return {
                     message: `Cell ${cellRef(checkR, c)} must be a path. A wall there would trap cell ${cellRef(SIZE - 1, c)} as a dead end.`,
-                    highlight: { type: 'cell', r: checkR, c }
+                    highlight: { type: 'cell', r: checkR, c },
+                    cells: [{ r: checkR, c }], shouldBe: 'path'
                 };
             }
         }
@@ -3775,7 +3794,8 @@ function hintDeadEndAdjacent(merged) {
                         if (merged[idx] === 0) {
                             return {
                                 message: `Cell ${cellRef(r, c)} must be a wall. It's adjacent to a dead end, and row ${rowToNumber(r)} needs ${SIZE - 1} walls.`,
-                                highlight: { type: 'cell', r, c }
+                                highlight: { type: 'cell', r, c },
+                                cells: [{ r, c }], shouldBe: 'wall'
                             };
                         }
                     }
@@ -3796,7 +3816,8 @@ function hintDeadEndAdjacent(merged) {
                         if (merged[idx] === 0) {
                             return {
                                 message: `Cell ${cellRef(r, c)} must be a wall. It's adjacent to a dead end, and column ${colToLetter(c)} needs ${SIZE - 1} walls.`,
-                                highlight: { type: 'cell', r, c }
+                                highlight: { type: 'cell', r, c },
+                                cells: [{ r, c }], shouldBe: 'wall'
                             };
                         }
                     }
@@ -3837,7 +3858,8 @@ function hintEdgeDeadEndOneWall(merged) {
                 const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
                 return {
                     message: `${cellsText}. Row ${rowToNumber(r)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells }
+                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
+                    cells: pathCells, shouldBe: 'path'
                 };
             }
         }
@@ -3869,7 +3891,8 @@ function hintEdgeDeadEndOneWall(merged) {
                 const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
                 return {
                     message: `${cellsText}. Column ${colToLetter(c)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells }
+                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
+                    cells: pathCells, shouldBe: 'path'
                 };
             }
         }
@@ -3885,6 +3908,32 @@ function hintFork() {
     };
 }
 
+// Validate a hint by checking if suggested cells match the solution
+// Returns true if valid, false if invalid
+// Hints can include: { cells: [{r, c}], shouldBe: 'wall'|'path' } for validation
+function validateHint(hint, hintName) {
+    if (!hint || !hint.cells || !hint.shouldBe) return true; // No validation data, assume valid
+
+    const expectedValue = hint.shouldBe === 'wall' ? 1 : 0; // solution uses 1=wall, 0=path
+
+    for (const cell of hint.cells) {
+        const solutionValue = solution[cell.r][cell.c];
+        if (solutionValue !== expectedValue) {
+            if (DEBUG_HINTS) {
+                const merged = getMergedBoard();
+                console.error(`[HINT VALIDATION FAILED] ${hintName}`);
+                console.error(`  Message: ${hint.message}`);
+                console.error(`  Cell ${cellRef(cell.r, cell.c)} suggested as ${hint.shouldBe}, but solution has ${solutionValue === 1 ? 'wall' : 'path'}`);
+                console.error(`  All suggested cells:`, hint.cells.map(c => `${cellRef(c.r, c.c)}`).join(', '));
+                console.error(`  Current merged state at cell: ${merged[cell.r * SIZE + cell.c]} (0=empty, 1=wall, 2=path)`);
+                console.error(`  Hint object:`, JSON.stringify(hint, null, 2));
+            }
+            return false;
+        }
+    }
+    return true;
+}
+
 // Main hint function - returns the first applicable hint
 function getHint() {
     const merged = getMergedBoard();
@@ -3892,23 +3941,29 @@ function getHint() {
 
     // Run hints in priority order
     // When in a fork, only report obvious mistakes (not "unknown error somewhere")
-    const hints = [
-        () => hintCheckMistakes(merged, inFork), // Pass onlyObvious=true when in fork
-        () => hintRowColComplete(merged),
-        () => hintDeadEndCanBeFinished(merged),
-        () => hintCacheNearEdge(merged),
-        () => hintPathMustExtend(merged),
-        () => hint2x2With3Paths(merged),
-        () => hintCornerFlankingDeadEnds(merged),
-        () => hintEdgeDeadEndOneWall(merged),
-        () => hintEdgeCornerDeadEnd(merged),
-        () => hintDeadEndAdjacent(merged),
-        () => hintFork()
+    const hintFunctions = [
+        { name: 'hintCheckMistakes', fn: () => hintCheckMistakes(merged, inFork) },
+        { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
+        { name: 'hintDeadEndCanBeFinished', fn: () => hintDeadEndCanBeFinished(merged) },
+        { name: 'hintCacheNearEdge', fn: () => hintCacheNearEdge(merged) },
+        { name: 'hintPathMustExtend', fn: () => hintPathMustExtend(merged) },
+        { name: 'hint2x2With3Paths', fn: () => hint2x2With3Paths(merged) },
+        { name: 'hintCornerFlankingDeadEnds', fn: () => hintCornerFlankingDeadEnds(merged) },
+        { name: 'hintEdgeDeadEndOneWall', fn: () => hintEdgeDeadEndOneWall(merged) },
+        { name: 'hintEdgeCornerDeadEnd', fn: () => hintEdgeCornerDeadEnd(merged) },
+        { name: 'hintDeadEndAdjacent', fn: () => hintDeadEndAdjacent(merged) },
+        { name: 'hintFork', fn: () => hintFork() }
     ];
 
-    for (const hintFn of hints) {
-        const hint = hintFn();
-        if (hint) return hint;
+    for (const { name, fn } of hintFunctions) {
+        const hint = fn();
+        if (hint) {
+            // Validate the hint before returning it
+            if (validateHint(hint, name)) {
+                return hint;
+            }
+            // Invalid hint - skip it and try the next one
+        }
     }
 
     return hintFork();

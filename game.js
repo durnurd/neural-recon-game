@@ -3752,17 +3752,20 @@ function hintRowColComplete(merged, forCell = null) {
             if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
         }
         if (emptyCells.length === 0) continue;
+        
 
         let hint = null;
         if (walls === target) {
+            const pathMessage = emptyCells.length === 1 ? 'The remaining cell must be a path' : 'The remaining cells must all be paths';
             hint = {
-                message: `Row ${rowToNumber(r)} has all its walls. The remaining cells must be paths.`,
+                message: `Row ${rowToNumber(r)} has all its walls. ${pathMessage}.`,
                 highlight: { type: 'row', index: r },
                 cells: emptyCells, shouldBe: 'path'
             };
         } else if (paths === expectedPaths) {
+            const wallMessage = emptyCells.length === 1 ? 'The remaining cell must be a wall' : 'The remaining cells must all be walls';
             hint = {
-                message: `Row ${rowToNumber(r)} has all its paths. The remaining cells must be walls.`,
+                message: `Row ${rowToNumber(r)} has all its paths. ${wallMessage}.`,
                 highlight: { type: 'row', index: r },
                 cells: emptyCells, shouldBe: 'wall'
             };
@@ -3789,14 +3792,16 @@ function hintRowColComplete(merged, forCell = null) {
 
         let hint = null;
         if (walls === target) {
+            const pathMessage = emptyCells.length === 1 ? 'The remaining cell must be a path' : 'The remaining cells must all be paths';
             hint = {
-                message: `Column ${colToLetter(c)} has all its walls. The remaining cells must be paths.`,
+                message: `Column ${colToLetter(c)} has all its walls. ${pathMessage}.`,
                 highlight: { type: 'col', index: c },
                 cells: emptyCells, shouldBe: 'path'
             };
         } else if (paths === expectedPaths) {
+            const wallMessage = emptyCells.length === 1 ? 'The remaining cell must be a wall' : 'The remaining cells must all be walls';
             hint = {
-                message: `Column ${colToLetter(c)} has all its paths. The remaining cells must be walls.`,
+                message: `Column ${colToLetter(c)} has all its paths. ${wallMessage}.`,
                 highlight: { type: 'col', index: c },
                 cells: emptyCells, shouldBe: 'wall'
             };
@@ -3856,7 +3861,7 @@ function hintDeadEndCanBeFinished(merged, forCell = null) {
                 const wallWord = emptyCount === 1 ? 'a wall' : 'walls';
                 const mustWord = emptyCount === 1 ? 'must' : emptyCount == 2 ? 'must both' : 'must all';
                 hint = {
-                    message: `${cellWord} ${cellList} ${mustWord} be ${wallWord}. The dead end at ${cellRef(r, c)} already has its one path.`,
+                    message: `${cellWord} ${cellList} ${mustWord} be ${wallWord} to complete the dead end at ${cellRef(r, c)}.`,
                     highlight: emptyCount === 1
                         ? { type: 'cell', r: emptyCells[0].r, c: emptyCells[0].c }
                         : { type: 'cells', cells: emptyCells },
@@ -3868,7 +3873,7 @@ function hintDeadEndCanBeFinished(merged, forCell = null) {
             if (wallCount === 3 && emptyCount === 1 && pathCount === 0) {
                 const cell = emptyCells[0];
                 hint = {
-                    message: `Cell ${cellRef(cell.r, cell.c)} must be a path. It's the only way to connect the dead end at ${cellRef(r, c)}.`,
+                    message: `Cell ${cellRef(cell.r, cell.c)} must be a path to complete the dead end at ${cellRef(r, c)}.`,
                     highlight: { type: 'cell', r: cell.r, c: cell.c },
                     cells: [cell], shouldBe: 'path'
                 };
@@ -4881,6 +4886,18 @@ function hintEdgeCornerDeadEnd(merged) {
                     cells: [{ r, c: checkC }], shouldBe: 'path'
                 };
             }
+            // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
+            // to avoid creating a 2x2 path area
+            if (!isTargetDeadEnd(r, 0) && SIZE > 2) {
+                const checkC2 = 2;
+                if (merged[r * SIZE + checkC2] === 0 && !isFixedPath(r, checkC2)) {
+                    return {
+                        message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                        highlight: { type: 'cell', r, c: checkC2 },
+                        cells: [{ r, c: checkC2 }], shouldBe: 'path'
+                    };
+                }
+            }
         }
 
         // Right corner (column SIZE-1)
@@ -4894,6 +4911,18 @@ function hintEdgeCornerDeadEnd(merged) {
                     highlight: { type: 'cell', r, c: checkC },
                     cells: [{ r, c: checkC }], shouldBe: 'path'
                 };
+            }
+            // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
+            // to avoid creating a 2x2 path area
+            if (!isTargetDeadEnd(r, SIZE - 1) && SIZE > 2) {
+                const checkC2 = SIZE - 3;
+                if (merged[r * SIZE + checkC2] === 0 && !isFixedPath(r, checkC2)) {
+                    return {
+                        message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                        highlight: { type: 'cell', r, c: checkC2 },
+                        cells: [{ r, c: checkC2 }], shouldBe: 'path'
+                    };
+                }
             }
         }
     }
@@ -4915,6 +4944,18 @@ function hintEdgeCornerDeadEnd(merged) {
                     cells: [{ r: checkR, c }], shouldBe: 'path'
                 };
             }
+            // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
+            // to avoid creating a 2x2 path area
+            if (!isTargetDeadEnd(0, c) && SIZE > 2) {
+                const checkR2 = 2;
+                if (merged[checkR2 * SIZE + c] === 0 && !isFixedPath(checkR2, c)) {
+                    return {
+                        message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                        highlight: { type: 'cell', r: checkR2, c },
+                        cells: [{ r: checkR2, c }], shouldBe: 'path'
+                    };
+                }
+            }
         }
 
         // Bottom corner (row SIZE-1)
@@ -4927,6 +4968,18 @@ function hintEdgeCornerDeadEnd(merged) {
                     highlight: { type: 'cell', r: checkR, c },
                     cells: [{ r: checkR, c }], shouldBe: 'path'
                 };
+            }
+            // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
+            // to avoid creating a 2x2 path area
+            if (!isTargetDeadEnd(SIZE - 1, c) && SIZE > 2) {
+                const checkR2 = SIZE - 3;
+                if (merged[checkR2 * SIZE + c] === 0 && !isFixedPath(checkR2, c)) {
+                    return {
+                        message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                        highlight: { type: 'cell', r: checkR2, c },
+                        cells: [{ r: checkR2, c }], shouldBe: 'path'
+                    };
+                }
             }
         }
     }

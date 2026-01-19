@@ -48,7 +48,7 @@
                 <div class="briefing-section">
                     <h3>Rules</h3>
                     <p>1. The <span class="briefing-tag">numbers</span> on each row/column show how many <span class="theme-walls">walls</span> belong there.</p>
-                    <p>2. The path must be <span class="briefing-tag">continuous</span> — all path nodes connect.</p>
+                    <p>2. The path must be <span class="briefing-tag">continuous</span>. All path nodes connect.</p>
                     <p>3. <span class="briefing-tag">No 2×2 squares</span> of path nodes allowed (except inside a <span class="theme-vault">vault</span>).</p>
                     <p>4. On larger grids, a <span class="briefing-tag theme-stockpile">Stockpile</span> may appear inside a hidden 3×3 <span class="theme-vault">vault</span> with a single door.</p>
                 </div>
@@ -277,6 +277,112 @@
                         </div>
                         <div class="tip-explanation">
                             This row needs 1 <span class="theme-wall">wall</span>. Since a <span class="theme-deadend">dead end</span> is surrounded by 3 <span class="theme-walls">walls</span>, the row's only <span class="theme-wall">wall</span> must be one of the two cells to the left or right of the <span class="theme-deadend">dead end</span> (X). Even though it cannot be deduced which of the two is the <span class="theme-wall">wall</span> and which is part of the path, it is known that the two cells above and below must be <span class="theme-walls">walls</span>, and also all other cells in the row are also part of the path.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 8: Path Must Extend</h3>
+                    <p>A path cell with 2 <span class="theme-walls">walls</span> around it must extend in both remaining directions.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(3, 24px);">
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-deduced"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                                <div class="tip-cell tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-wall"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The path cell is surrounded by <span class="theme-walls">walls</span> on 2 sides. It must continue somewhere. The only option is upward, so that cell must be a path.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 9: Corner Flanked by <span class="theme-deadends">Dead Ends</span></h3>
+                    <p>A corner cell with <span class="theme-deadends">dead ends</span> on both open sides must be a <span class="theme-wall">wall</span>.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(3, 24px);">
+                                <div class="tip-cell tip-cell-deduced tip-cell-wall" style="border-left: 3px solid #666; border-top: 3px solid #666;"></div>
+                                <div class="tip-cell tip-cell-deadend"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell tip-cell-deadend"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The corner cell is blocked by the grid edge on two sides. The other two neighbors are <span class="theme-deadends">dead ends</span>. A <span class="theme-path">path</span> in the corner would necessitate a pattern of <span class="theme-walls">walls</span> around them that would cut the corner off from the rest of the <span class="theme-path">path</span>. Therefore, the corner must be a <span class="theme-wall">wall</span>.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 10: <span class="theme-vault">Vault</span> Position Constraints</h3>
+                    <p>When a <span class="theme-stockpile">Stockpile</span> is near an edge or <span class="theme-walls">walls</span>, some cells must be paths to fit the 3×3 <span class="theme-vault">vault</span>.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div class="tip-grid" style="grid-template-columns: repeat(4, 24px);">
+                                <div class="tip-cell" style="border-left: 3px solid #666; border-top: 3px solid #666;"></div>
+                                <div class="tip-cell" style="border-top: 3px solid #666;"></div>
+                                <div class="tip-cell" style="border-top: 3px solid #666;"></div>
+                                <div class="tip-cell" style="border-top: 3px solid #666;"></div>
+                                <div class="tip-cell" style="border-left: 3px solid #666;"></div>
+                                <div class="tip-cell tip-cell-stockpile"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell" style="border-left: 3px solid #666;"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                <div class="tip-cell tip-cell-deduced tip-cell-path"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell" style="border-left: 3px solid #666;"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                                <div class="tip-cell"></div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            The <span class="theme-stockpile">Stockpile</span> is near the top-left corner. The 3×3 <span class="theme-vault">vault</span> could be in various positions while still enclosing the <span class="theme-stockpile">Stockpile</span>. The three cells in the shown positions are a part of the <span class="theme-vault">vault</span> in all possibilities.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="briefing-section">
+                    <h3>Tip 11: Row/Column Completion Errors</h3>
+                    <p>If completing a row or column with a certain value would propagate to create an error, the opposite must be true.</p>
+                    <div class="tip-example">
+                        <div>
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="color: var(--neon-green); width: 16px;">1</div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(4, 24px);">
+                                        <div class="tip-cell tip-cell-deduced tip-cell-wall"></div>
+                                        <div class="tip-cell tip-cell-path"></div>
+                                        <div class="tip-cell tip-cell-maybe" style="font-size:9px; color:#fa0;">?</div>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 4px;">
+                                    <div class="tip-label" style="width: 16px;"></div>
+                                    <div class="tip-grid" style="grid-template-columns: repeat(4, 24px);">
+                                        <div class="tip-cell"></div>
+                                        <div class="tip-cell tip-cell-path"></div>
+                                        <div class="tip-cell tip-cell-path"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tip-explanation">
+                            This row needs 1 <span class="theme-wall">wall</span>. If the wall were in the leftmost cell, the rightmost cell (?) would have to be a <span class="theme-path">path</span>, but that would create a 2×2 path block. Therefore, the first cell must be a <span class="theme-path">path</span>.
                         </div>
                     </div>
                 </div>

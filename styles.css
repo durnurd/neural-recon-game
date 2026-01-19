@@ -254,6 +254,14 @@ body {
     opacity: 0.9;
 }
 
+.menu-item-danger {
+    color: #ff6b6b;
+}
+.menu-item-danger:hover {
+    background: rgba(255, 107, 107, 0.15);
+    color: #ff4444;
+}
+
 .menu-divider {
     height: 1px; margin: 8px 20px;
     background: rgba(0, 243, 255, 0.2);
@@ -795,6 +803,17 @@ body {
     text-shadow: 0 0 8px var(--neon-cyan);
 }
 
+.stats-tab.locked {
+    opacity: 0.4;
+    cursor: not-allowed;
+    color: #555;
+}
+
+.stats-tab.locked:hover {
+    background: rgba(0, 243, 255, 0.05);
+    color: #555;
+}
+
 .stats-size-content {
     margin-top: 8px; padding: 12px;
     background: rgba(0, 243, 255, 0.05);
@@ -848,6 +867,133 @@ body {
 
 .confirm-dialog-buttons .cyber-btn {
     padding: 8px 20px; font-size: 11px;
+}
+
+/* Tutorial Dialog */
+.tutorial-dialog {
+    background: rgba(5, 5, 6, 0.98);
+    border: 2px solid var(--neon-cyan);
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.4);
+    padding: 0; max-width: 400px; border-radius: 4px;
+}
+
+.tutorial-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.85);
+}
+
+.tutorial-dialog.tutorial-complete {
+    border-color: var(--neon-green);
+    box-shadow: 0 0 30px rgba(0, 255, 159, 0.4);
+}
+
+.tutorial-dialog-content {
+    padding: 24px;
+}
+
+.tutorial-dialog-title {
+    font-size: 1.1rem; font-weight: 900; color: var(--neon-cyan);
+    text-shadow: 0 0 15px var(--neon-cyan);
+    letter-spacing: 2px; margin-bottom: 16px; text-align: center;
+    font-family: var(--font-heading, 'Courier New', monospace);
+}
+
+.tutorial-complete .tutorial-dialog-title {
+    color: var(--neon-green);
+    text-shadow: 0 0 15px var(--neon-green);
+}
+
+.tutorial-dialog-body {
+    font-family: var(--font-mono, 'Courier New', monospace);
+    font-size: 12px; color: #bbb; line-height: 1.6;
+}
+
+.tutorial-dialog-body p {
+    margin: 10px 0;
+}
+
+.tutorial-rules {
+    background: rgba(0, 243, 255, 0.05);
+    border-left: 2px solid var(--neon-cyan);
+    padding: 10px 14px; margin: 14px 0;
+}
+
+.tutorial-rules p {
+    margin: 6px 0;
+}
+
+.tutorial-highlight {
+    color: var(--neon-cyan); font-weight: bold;
+}
+
+.tutorial-complete .tutorial-highlight {
+    color: var(--neon-green);
+}
+
+.tutorial-instruction {
+    color: var(--neon-amber); font-style: italic; margin-top: 14px !important;
+}
+
+.tutorial-success {
+    color: var(--neon-green); font-size: 14px; font-weight: bold;
+    text-align: center; margin-bottom: 14px !important;
+}
+
+.tutorial-techno {
+    color: #888; font-size: 11px; text-align: center;
+}
+
+.tutorial-next {
+    color: #aaa; margin-top: 14px !important;
+}
+
+.tutorial-dialog-buttons {
+    display: flex; gap: 12px; justify-content: center; margin-top: 20px;
+}
+
+.tutorial-dialog-buttons .cyber-btn {
+    padding: 10px 24px; font-size: 11px;
+}
+
+/* Tutorial mode hint toast - persistent, no auto-hide */
+.hint-toast.tutorial-mode {
+    cursor: default;
+}
+
+/* Tutorial persistent highlights - infinite animation */
+.tutorial-persistent.hint-highlight-cell {
+    animation: hint-cell-pulse 1s ease-in-out infinite;
+}
+
+.tutorial-persistent.hint-highlight-cell::after {
+    animation: hint-border-pulse 1s ease-in-out infinite;
+}
+
+.tutorial-persistent.hint-highlight-row,
+.tutorial-persistent.hint-highlight-col {
+    animation: hint-pulse 1s ease-in-out infinite;
+}
+
+.count-neon.hint-highlight-label.tutorial-persistent {
+    animation: hint-label-pulse 1s ease-in-out infinite;
+}
+
+/* Tutorial tool highlight - pulsing border on mode buttons */
+.mode-btn.tutorial-tool-highlight {
+    animation: tutorial-tool-pulse 1s ease-in-out infinite;
+    position: relative;
+}
+
+@keyframes tutorial-tool-pulse {
+    0%, 100% {
+        box-shadow: 0 0 8px 2px var(--btn-hint-color, #ffcc00),
+                    inset 0 0 4px rgba(255, 204, 0, 0.3);
+        border-color: var(--btn-hint-color, #ffcc00);
+    }
+    50% {
+        box-shadow: 0 0 16px 4px var(--btn-hint-color, #ffcc00),
+                    inset 0 0 8px rgba(255, 204, 0, 0.5);
+        border-color: var(--btn-hint-color, #ffcc00);
+    }
 }
 
 /* Hint Toast - Android-style bottom toast */

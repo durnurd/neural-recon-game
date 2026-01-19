@@ -141,7 +141,7 @@
 
                 <div class="briefing-section">
                     <h3>Tip 4: <span class="theme-vault">Vault</span> Layout</h3>
-                    <p id="vaultDesc">On 6×6+ grids, look for a 3×3 vault with 11 walls around it and 1 door. The vault contains a <span class="briefing-tag theme-stockpile">Stockpile</span> somewhere inside.</p>
+                    <p id="vaultDesc">On {VAULT_SIZE}+ grids, look for a 3×3 vault with 11 walls around it and 1 door. The vault contains a <span class="briefing-tag theme-stockpile">Stockpile</span> somewhere inside.</p>
                     <div class="tip-example">
                         <div>
                             <div class="tip-grid" style="grid-template-columns: repeat(5, 24px);">
@@ -329,6 +329,13 @@
                     <span class="menu-item-label">Stats</span>
                 </button>
                 <div class="menu-divider"></div>
+                <button id="tutorialBtn" class="menu-item">
+                    <span class="menu-item-label">Play Tutorial</span>
+                </button>
+                <button id="tutorialCurrentBtn" class="menu-item">
+                    <span class="menu-item-label">Tutorial: Current Puzzle</span>
+                </button>
+                <div class="menu-divider"></div>
 
                 <!-- Assist Mode Expandable Menu -->
                 <div class="menu-expand-section">
@@ -353,6 +360,10 @@
                                 <button id="progressIndicatorsBtn" class="menu-item menu-toggle nested-item">
                                     <span class="menu-item-label">Progress Indicators</span>
                                     <span id="progressIndicatorsState" class="menu-toggle-state">ON</span>
+                                </button>
+                                <button id="hintsEnabledBtn" class="menu-item menu-toggle nested-item">
+                                    <span class="menu-item-label">Hints Tool</span>
+                                    <span id="hintsEnabledState" class="menu-toggle-state off-state">OFF</span>
                                 </button>
                             </div>
                         </div>
@@ -408,6 +419,10 @@
                         <button id="playSeedBtn" class="seed-play-btn">Play</button>
                     </div>
                 </div>
+                <div class="menu-divider"></div>
+                <button id="resetAllDataBtn" class="menu-item menu-item-danger">
+                    <span class="menu-item-label">Reset All Data</span>
+                </button>
                 <div class="menu-divider"></div>
                 <div class="menu-audio-row">
                     <button id="soundToggleBtn" class="menu-audio-btn" title="Sound Effects">
@@ -547,6 +562,18 @@
         </div>
     </dialog>
 
+    <!-- Reset All Data Confirm Dialog -->
+    <dialog id="resetAllDataDialog" class="confirm-dialog">
+        <div class="confirm-dialog-content">
+            <div class="confirm-dialog-title">⚠ FULL SYSTEM RESET ⚠</div>
+            <p class="confirm-dialog-message">This will erase ALL data: stats, progress, unlocked levels, and tutorial completion. You will start fresh as a new operator. This cannot be undone.</p>
+            <div class="confirm-dialog-buttons">
+                <button id="resetAllCancelBtn" class="cyber-btn">Cancel</button>
+                <button id="resetAllConfirmBtn" class="cyber-btn btn-kill">Reset Everything</button>
+            </div>
+        </div>
+    </dialog>
+
     <!-- Reset Puzzle Confirm Dialog -->
     <dialog id="resetPuzzleDialog" class="confirm-dialog">
         <div class="confirm-dialog-content">
@@ -555,6 +582,93 @@
             <div class="confirm-dialog-buttons">
                 <button id="resetPuzzleCancelBtn" class="cyber-btn">Cancel</button>
                 <button id="resetPuzzleConfirmBtn" class="cyber-btn btn-kill">Initialize</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Tutorial Intro Dialog -->
+    <dialog id="tutorialIntroDialog" class="tutorial-dialog">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">TRAINING PROTOCOL INITIATED</div>
+            <div class="tutorial-dialog-body">
+                <p>Welcome, Operator. This guided training will teach you to decode neural pathways.</p>
+                <div class="tutorial-rules">
+                    <p><span class="tutorial-highlight">OBJECTIVE:</span> Find the hidden path by placing walls.</p>
+                    <p><span class="tutorial-highlight">RULE 1:</span> Numbers show how many walls belong in each row/column.</p>
+                    <p><span class="tutorial-highlight">RULE 2:</span> All path cells must connect to form one continuous network.</p>
+                    <p><span class="tutorial-highlight">RULE 3:</span> No 2×2 blocks of path cells allowed.</p>
+                </div>
+                <p class="tutorial-instruction">Follow the hints to complete the puzzle.</p>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="tutorialIntroStartBtn" class="cyber-btn btn-action">Begin Training</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Tutorial Complete Dialog -->
+    <dialog id="tutorialCompleteDialog" class="tutorial-dialog tutorial-complete">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">TRAINING COMPLETE</div>
+            <div class="tutorial-dialog-body">
+                <p class="tutorial-success">Neural pathway reconstruction successful!</p>
+                <p class="tutorial-techno">Synaptic calibration verified. Cognitive pattern recognition modules now online. You are cleared for field operations.</p>
+                <p class="tutorial-next">Complete more puzzles to unlock larger grid sizes with greater challenges.</p>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="tutorialCompleteBtn" class="cyber-btn btn-action">Continue</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- User Tutorial Complete Dialog (simpler version) -->
+    <dialog id="userTutorialCompleteDialog" class="tutorial-dialog tutorial-complete">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">TRAINING COMPLETE</div>
+            <div class="tutorial-dialog-body">
+                <p class="tutorial-success">Neural pathway reconstruction successful!</p>
+                <p class="tutorial-techno">Pattern analysis complete. All logical deductions verified.</p>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="userTutorialCompleteBtn" class="cyber-btn btn-action">Continue</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Level Unlocked Dialog -->
+    <dialog id="levelUnlockedDialog" class="tutorial-dialog tutorial-complete">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">CLEARANCE UPGRADED</div>
+            <div class="tutorial-dialog-body">
+                <p class="tutorial-success">Neural bandwidth expanded!</p>
+                <p class="tutorial-techno" id="unlockTechnoText">Cognitive load capacity verified. Higher-complexity matrices now accessible.</p>
+                <p class="tutorial-next" id="unlockNextText">You've unlocked <span class="tutorial-highlight" id="unlockedSizeText">5×5</span> grids. Ready to increase the challenge? You can always return to smaller grids anytime.</p>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="tryNewSizeBtn" class="cyber-btn btn-action">Upgrade Now</button>
+                <button id="stayCurrentSizeBtn" class="cyber-btn">Not Yet</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Data Vault Intro Dialog -->
+    <dialog id="dataVaultIntroDialog" class="tutorial-dialog">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">NEW ELEMENT DETECTED</div>
+            <div class="tutorial-dialog-body">
+                <p>This grid contains a <span class="tutorial-highlight">Data Vault</span> — a secure 3×3 zone surrounding a stockpile.</p>
+                <div class="tutorial-rules">
+                    <p><span class="tutorial-highlight">VAULT RULES:</span></p>
+                    <p>• The vault is a 3×3 area of path cells</p>
+                    <p>• It must be surrounded by walls on all sides</p>
+                    <p>• Exactly ONE door connects the vault to the main path</p>
+                    <p>• The 2×2 rule does NOT apply inside the vault</p>
+                </div>
+                <p class="tutorial-instruction">Would you like guided training for this puzzle?</p>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="dataVaultSkipBtn" class="cyber-btn">Skip Tutorial</button>
+                <button id="dataVaultTutorialBtn" class="cyber-btn btn-action">Start Tutorial</button>
             </div>
         </div>
     </dialog>

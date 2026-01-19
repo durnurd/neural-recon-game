@@ -90,7 +90,7 @@ const ThemeBase = {
         stockpile: 'Stockpile',
         vault: 'Vault',
         stockpileDesc: 'Located inside a 3×3 vault surrounded by walls with one door.',
-        vaultDesc: 'On 6×6+ grids, look for a 3×3 vault with 11 walls around it and 1 door.'
+        vaultDesc: 'On {VAULT_SIZE}+ grids, look for a 3×3 vault with 11 walls around it and 1 door.'
     },
     
     // Flavor text generators

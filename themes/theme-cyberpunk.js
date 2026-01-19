@@ -63,7 +63,7 @@ const ThemeCyberpunk = Object.assign({}, ThemeBase, {
         stockpile: 'Data Cache',
         vault: 'Data Vault',
         stockpileDesc: 'Located inside a 3×3 vault surrounded by walls with one door. Turns green when the vault is properly sealed.',
-        vaultDesc: 'On 6×6+ grids, look for a 3×3 vault with 11 walls around it and 1 door. The vault contains a Data Cache somewhere inside.'
+        vaultDesc: 'On {VAULT_SIZE}+ grids, look for a 3×3 vault with 11 walls around it and 1 door. The vault contains a Data Cache somewhere inside.'
     },
     
     babble: {

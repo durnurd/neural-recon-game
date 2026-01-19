@@ -421,6 +421,12 @@ function setAnimationDelay(element) {
     element.style.setProperty('--anim-delay', getAnimationDelay());
 }
 
+// ============================================
+// GAME CONFIGURATION CONSTANTS
+// ============================================
+const DATA_VAULT_UNLOCK_SIZE = 7; // Grid size at which data vaults are first introduced
+const DATA_VAULT_FIRST_SEED = 'YT5EGJ'; // Seed for first puzzle when unlocking data vaults
+
 let SIZE = 8;
 let solution = [];
 let layers = [];
@@ -431,6 +437,13 @@ let stockpilePos = null; // {r, c} position of data stockpile, or null if none
 let isWon = false;
 let showKey = false;
 let undoState = null; // Single undo state: {layers, currentIdx, forkAnchors}
+
+// Tutorial mode state
+let isTutorialMode = false;
+let isUserInitiatedTutorial = false; // True if user started tutorial on current puzzle
+let tutorialHint = null; // Current hint being shown in tutorial
+let hasCompletedTutorial = false; // Track if user has completed the tutorial
+let hasSeenDataVaultIntro = false; // Track if user has seen data vault intro
 
 // Seeded random number generator (Mulberry32)
 let currentSeed = null;
@@ -514,7 +527,8 @@ const assistSettings = {
     visualHints: {
         enabled: true,       // All visual hints
         errorIndicators: true,    // Red X on invalid cells, red traces/dots for 2x2 clumps
-        progressIndicators: true  // Green/blue/cyan completion indicators
+        progressIndicators: true, // Green/blue/cyan completion indicators
+        hintsEnabled: false       // Show hint buttons and allow hints - off by default
     },
     autoFill: {
         enabled: true,       // All auto-fill features
@@ -532,6 +546,9 @@ function isErrorIndicatorsEnabled() {
 function isProgressIndicatorsEnabled() {
     return assistSettings.enabled && assistSettings.visualHints.enabled && assistSettings.visualHints.progressIndicators;
 }
+function isHintsEnabled() {
+    return assistSettings.enabled && assistSettings.visualHints.enabled && assistSettings.visualHints.hintsEnabled;
+}
 function isDeadEndFillEnabled() {
     return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.deadEndFill;
 }
@@ -542,7 +559,7 @@ function isPathCompletionEnabled() {
     return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.pathCompletion;
 }
 function isApplyHintsEnabled() {
-    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.applyHints;
+    return assistSettings.enabled && assistSettings.autoFill.enabled && assistSettings.autoFill.applyHints && isHintsEnabled();
 }
 
 function saveUndoState() {
@@ -555,7 +572,7 @@ function saveUndoState() {
 }
 
 function undo() {
-    if (undoState === null || isWon) return;
+    if (undoState === null || isWon || isTutorialMode) return;
     ChipSound.undo();
     layers = undoState.layers;
     currentIdx = undoState.currentIdx;
@@ -570,9 +587,28 @@ function undo() {
 let colors = ["cyan", "blue", "amber", "magenta"];
 
 function updateButtonStates() {
+    const undoBtn = document.getElementById('undoBtn');
+    const addLayerBtn = document.getElementById('addLayerBtn');
+    const newMazeBtn = document.getElementById('newMazeBtn');
+
     document.getElementById('commitBtn').disabled = currentIdx === 0;
     document.getElementById('discardBtn').disabled = currentIdx === 0;
-    document.getElementById('addLayerBtn').disabled = currentIdx >= 3;
+
+    // Disable undo and fork during all tutorials
+    if (isTutorialMode) {
+        undoBtn.disabled = true;
+        addLayerBtn.disabled = true;
+    } else {
+        undoBtn.disabled = undoState === null;
+        addLayerBtn.disabled = currentIdx >= 3;
+    }
+
+    // Disable Initialize during first tutorial (not user-initiated)
+    if (isTutorialMode && !isUserInitiatedTutorial) {
+        newMazeBtn.disabled = true;
+    } else {
+        newMazeBtn.disabled = false;
+    }
 
     // Use theme terminology for layer names
     const theme = typeof ThemeManager !== 'undefined' ? ThemeManager.current() : null;
@@ -583,11 +619,11 @@ function updateButtonStates() {
     // Update button labels from theme
     if (theme?.terminology) {
         const t = theme.terminology;
-        if (t.fork) document.getElementById('addLayerBtn').textContent = t.fork;
+        if (t.fork) addLayerBtn.textContent = t.fork;
         if (t.commit) document.getElementById('commitBtn').textContent = t.commit;
         if (t.discard) document.getElementById('discardBtn').textContent = t.discard;
-        if (t.undo) document.getElementById('undoBtn').textContent = t.undo;
-        if (t.newGame) document.getElementById('newMazeBtn').textContent = t.newGame;
+        if (t.undo) undoBtn.textContent = t.undo;
+        if (t.newGame) newMazeBtn.textContent = t.newGame;
         if (t.briefing) document.getElementById('briefingBtn').textContent = t.briefing;
     }
 }
@@ -708,6 +744,82 @@ const PlayerStats = (() => {
         }
     };
 })();
+
+// ============================================
+// LEVEL UNLOCK SYSTEM
+// ============================================
+const GRID_SIZES = [4, 5, 6, 7, 8];
+const WINS_TO_UNLOCK_NEXT = 3; // Wins needed at a size to unlock next size
+
+// Get the maximum unlocked grid size based on stats
+function getMaxUnlockedSize() {
+    const stats = PlayerStats.get();
+    let maxUnlocked = 4; // 4x4 always unlocked
+
+    for (let i = 0; i < GRID_SIZES.length - 1; i++) {
+        const size = GRID_SIZES[i];
+        const sizeStats = stats.bySize[String(size)];
+        const wins = sizeStats ? sizeStats.wins : 0;
+
+        if (wins >= WINS_TO_UNLOCK_NEXT) {
+            maxUnlocked = GRID_SIZES[i + 1];
+        } else {
+            break; // Must unlock sizes in order
+        }
+    }
+
+    return maxUnlocked;
+}
+
+// Check if a specific size is unlocked
+function isSizeUnlocked(size) {
+    return size <= getMaxUnlockedSize();
+}
+
+// Get the next size after the given size (or null if at max)
+function getNextSize(size) {
+    const idx = GRID_SIZES.indexOf(size);
+    if (idx >= 0 && idx < GRID_SIZES.length - 1) {
+        return GRID_SIZES[idx + 1];
+    }
+    return null;
+}
+
+// Check if completing a puzzle just unlocked a new size
+function checkForNewUnlock(size) {
+    const stats = PlayerStats.get();
+    const sizeStats = stats.bySize[String(size)];
+    const wins = sizeStats ? sizeStats.wins : 0;
+    const nextSize = getNextSize(size);
+
+    // Just hit exactly the unlock threshold
+    if (wins === WINS_TO_UNLOCK_NEXT && nextSize !== null) {
+        return nextSize;
+    }
+    return null;
+}
+
+// Update the grid size select to show locked/unlocked states
+function updateGridSizeSelect() {
+    const select = document.getElementById('gridSizeSelect');
+    const maxUnlocked = getMaxUnlockedSize();
+
+    Array.from(select.options).forEach(option => {
+        const size = parseInt(option.value);
+        if (size > maxUnlocked) {
+            option.disabled = true;
+            option.textContent = `${size}x${size} 🔒`;
+        } else {
+            option.disabled = false;
+            option.textContent = `${size}x${size}`;
+        }
+    });
+
+    // If current selection is locked, switch to max unlocked
+    if (parseInt(select.value) > maxUnlocked) {
+        select.value = String(maxUnlocked);
+    }
+}
 
 // ============================================
 // PERSISTENT GAME STATE (localStorage-based)
@@ -841,6 +953,14 @@ function init(resetStreak = true, specificSeed = null) {
 
     // Clear any saved state since we started a new game
     GameState.clear();
+
+    // Show data vault intro if this is the first time seeing a stockpile
+    if (stockpilePos && !hasSeenDataVaultIntro && !isTutorialMode) {
+        // Small delay to let the grid render first
+        setTimeout(() => {
+            showDataVaultIntro();
+        }, 500);
+    }
 }
 
 // Restore game from saved state
@@ -1481,8 +1601,7 @@ function has2x2PathBlock() {
 function tryAddSecretRoom() {
     stockpilePos = null;
 
-    if (SIZE <= 5) return; // No data rooms for 5x5 or smaller
-    if (SIZE === 6 && seededRandom() > 0.25) return; // Only 25% chance for 6x6
+    if (SIZE < DATA_VAULT_UNLOCK_SIZE) return; // No data vaults for sizes below unlock size
 
     // Save original solution in case we need to revert
     const originalSolution = solution.map(row => [...row]);
@@ -1804,6 +1923,30 @@ function handleCellAction(idx) {
     // Check if this is a dead end node or data stockpile
     const isDeadEnd = isTargetDeadEnd(r, c);
     const isStockpile = stockpilePos && stockpilePos.r === r && stockpilePos.c === c;
+
+    // Tutorial mode: in hint mode, allow completing hint cells
+    // In other modes, only allow moves that match the current hint
+    if (isTutorialMode && drawingMode !== 'hint') {
+        // Determine what value would be placed
+        let intendedValue = 0;
+        if (drawingMode === 'wall') {
+            intendedValue = (mergedVal === 1 && layers[currentIdx][idx] === 1) ? 0 : 1;
+        } else if (drawingMode === 'path') {
+            intendedValue = (mergedVal === 2 && layers[currentIdx][idx] === 2) ? 0 : 2;
+        } else if (drawingMode === 'erase') {
+            intendedValue = 0;
+        } else if (drawingMode === 'smart') {
+            // Smart mode: empty->wall, wall->path, path->empty
+            if (mergedVal === 0) intendedValue = 1;
+            else if (mergedVal === 1) intendedValue = 2;
+            else intendedValue = 0;
+        }
+
+        // Check if this move is valid in tutorial mode
+        if (!isTutorialMoveValid(r, c, intendedValue)) {
+            return; // Block the move
+        }
+    }
 
     // Handle hint mode - find and display hint for this cell
     if (drawingMode === 'hint') {
@@ -2398,7 +2541,16 @@ function update() {
         if(solution[r][c] === 1 && merged[i] !== 1) allWallsCorrect = false;
         if(merged[i] === 1 && solution[r][c] !== 1) allWallsCorrect = false;
     }
-    if(allWallsCorrect || isValidAlternateSolution(merged)) { isWon = true; triggerVictorySequence(); return; }
+    if(allWallsCorrect || isValidAlternateSolution(merged)) {
+        isWon = true;
+        triggerVictorySequence();
+        return;
+    }
+
+    // Tutorial mode: check if current hint is complete and show next
+    if (isTutorialMode) {
+        onTutorialMove();
+    }
 
     const rowTotals = Array(SIZE).fill(0), colTotals = Array(SIZE).fill(0);
     const rowPathTotals = Array(SIZE).fill(0), colPathTotals = Array(SIZE).fill(0);
@@ -3004,6 +3156,12 @@ function triggerVictorySequence() {
         // Show victory overlay after path animation completes
         const totalAnimTime = waves.length * delayPerWave + 400;
         setTimeout(() => {
+            // Tutorial mode: show tutorial complete dialog instead of victory overlay
+            if (isTutorialMode) {
+                showTutorialComplete();
+                return;
+            }
+
             // Update stats
             winStreak++;
             const currentSessionTime = gameStartTime ? Date.now() - gameStartTime : 0;
@@ -3014,6 +3172,14 @@ function triggerVictorySequence() {
 
             // Record persistent stats
             PlayerStats.recordWin(SIZE, elapsed, moveCount, winStreak);
+
+            // Check if we just unlocked a new size
+            const newlyUnlockedSize = checkForNewUnlock(SIZE);
+            if (newlyUnlockedSize) {
+                updateGridSizeSelect();
+                showLevelUnlockedDialog(newlyUnlockedSize);
+                return;
+            }
 
             // Generate techno-babble
             document.getElementById('technoBabble').textContent = generateTechnoBabble();
@@ -3029,6 +3195,40 @@ function triggerVictorySequence() {
             document.getElementById('victoryOverlay').classList.add('visible');
         }, totalAnimTime);
     }, 100);
+}
+
+// Show the level unlocked dialog
+function showLevelUnlockedDialog(newSize) {
+    const dialog = document.getElementById('levelUnlockedDialog');
+    const sizeText = document.getElementById('unlockedSizeText');
+    const technoText = document.getElementById('unlockTechnoText');
+    const nextText = document.getElementById('unlockNextText');
+
+    if (sizeText) {
+        sizeText.textContent = `${newSize}×${newSize}`;
+    }
+
+    // Special message for data vault unlock size - introduces Data Vaults
+    if (newSize === DATA_VAULT_UNLOCK_SIZE) {
+        if (technoText) {
+            technoText.textContent = 'Secure data sectors now within operational parameters. New containment protocols available.';
+        }
+        if (nextText) {
+            nextText.innerHTML = `You've unlocked <span class="tutorial-highlight">${newSize}×${newSize}</span> grids. These larger matrices may contain <span class="tutorial-highlight">Data Vaults</span> — secure 3×3 zones with special rules. You can always return to smaller grids anytime.`;
+        }
+    } else {
+        // Standard message for other sizes
+        if (technoText) {
+            technoText.textContent = 'Cognitive load capacity verified. Higher-complexity matrices now accessible.';
+        }
+        if (nextText) {
+            nextText.innerHTML = `You've unlocked <span class="tutorial-highlight" id="unlockedSizeText">${newSize}×${newSize}</span> grids. Ready to increase the challenge? You can always return to smaller grids anytime.`;
+        }
+    }
+
+    // Store the new size for the button handlers
+    dialog.dataset.newSize = newSize;
+    dialog.showModal();
 }
 
 // Check if user has made any progress on the current puzzle
@@ -3087,7 +3287,16 @@ resetPuzzleDialog.addEventListener('click', (e) => {
 
 document.getElementById('gridSizeSelect').onchange = () => {
     const select = document.getElementById('gridSizeSelect');
+    const selectedSize = parseInt(select.value);
     const previousSize = SIZE;
+
+    // Check if selected size is unlocked
+    if (!isSizeUnlocked(selectedSize)) {
+        select.value = previousSize;
+        ChipSound.error();
+        return;
+    }
+
     confirmReset(
         () => init(true),
         () => { select.value = previousSize; }
@@ -3095,6 +3304,10 @@ document.getElementById('gridSizeSelect').onchange = () => {
 };
 document.getElementById('undoBtn').onclick = undo;
 document.getElementById('addLayerBtn').onclick = () => {
+    if (isTutorialMode) {
+        ChipSound.error();
+        return;
+    }
     if(currentIdx < 3) {
         ChipSound.fork();
         saveUndoState();
@@ -3126,7 +3339,14 @@ document.getElementById('discardBtn').onclick = () => {
         update();
     }
 };
-document.getElementById('newMazeBtn').onclick = () => confirmReset(() => init(true));
+document.getElementById('newMazeBtn').onclick = () => {
+    // Disable during first tutorial
+    if (isTutorialMode && !isUserInitiatedTutorial) {
+        ChipSound.error();
+        return;
+    }
+    confirmReset(() => init(true));
+};
 document.getElementById('nextLevelBtn').onclick = () => init(false);
 document.getElementById('decryptToggleBtn').onclick = () => {
     ChipSound.click();
@@ -3892,14 +4112,14 @@ function hintVaultInteriorMustBePath(merged) {
     if (emptyInterior.length === 1) {
         const cell = emptyInterior[0];
         return {
-            message: `Cell ${cellRef(cell.r, cell.c)} must be a path. This is the only valid vault position, so all interior cells must be paths.`,
+            message: `Cell ${cellRef(cell.r, cell.c)} must be paths within the vault. This is the only valid vault position, so all interior cells must be paths.`,
             highlight: { type: 'cell', r: cell.r, c: cell.c },
             cells: emptyInterior, shouldBe: 'path'
         };
     } else {
         const cellList = formatCellList(emptyInterior);
         return {
-            message: `Cells ${cellList} must be paths. This is the only valid vault position, so all interior cells must be paths.`,
+            message: `Cells ${cellList} must be paths within the vault. This is the only valid vault position, so all interior cells must be paths.`,
             highlight: { type: 'cells', cells: emptyInterior },
             cells: emptyInterior, shouldBe: 'path'
         };
@@ -5195,8 +5415,6 @@ function getHint() {
         // ===== LEVEL 1: TRIVIAL (single constraint, no reasoning) =====
         // Just counting: row/col has 0 or SIZE walls, so all cells are determined
         { name: 'hintTrivialRowCol', fn: () => hintTrivialRowCol(merged) },
-        // Row/col wall count is complete, remaining cells must be paths (or vice versa)
-        { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
 
         // ===== LEVEL 2: SIMPLE (single rule application) =====
         // Dead end already has 3 walls, the 4th neighbor must be a path
@@ -5207,6 +5425,8 @@ function getHint() {
         { name: 'hintVaultPerimeterComplete', fn: () => hintVaultPerimeterComplete(merged) },
         // Path has only one possible extension direction
         { name: 'hintPathMustExtend', fn: () => hintPathMustExtend(merged) },
+        // Row/col wall count is complete, remaining cells must be paths (or vice versa)
+        { name: 'hintRowColComplete', fn: () => hintRowColComplete(merged) },
 
         // ===== LEVEL 3: MODERATE (pattern recognition or 2-step reasoning) =====
         // Empty cell surrounded by walls/edges would be invalid dead end
@@ -5353,19 +5573,23 @@ function clearHintHighlights() {
     }
     // Clear cell highlights
     document.querySelectorAll('.hint-highlight-cell').forEach(el => {
-        el.classList.remove('hint-highlight-cell');
+        el.classList.remove('hint-highlight-cell', 'tutorial-persistent');
     });
     // Clear row highlights
     document.querySelectorAll('.hint-highlight-row').forEach(el => {
-        el.classList.remove('hint-highlight-row');
+        el.classList.remove('hint-highlight-row', 'tutorial-persistent');
     });
     // Clear column highlights
     document.querySelectorAll('.hint-highlight-col').forEach(el => {
-        el.classList.remove('hint-highlight-col');
+        el.classList.remove('hint-highlight-col', 'tutorial-persistent');
     });
     // Clear label highlights
     document.querySelectorAll('.hint-highlight-label').forEach(el => {
-        el.classList.remove('hint-highlight-label');
+        el.classList.remove('hint-highlight-label', 'tutorial-persistent');
+    });
+    // Clear tutorial tool highlights
+    document.querySelectorAll('.mode-btn.tutorial-tool-highlight').forEach(btn => {
+        btn.classList.remove('tutorial-tool-highlight');
     });
     // Fade out and remove coordinate labels
     const coordLabels = document.querySelectorAll('.cell-coord-label');
@@ -5564,7 +5788,7 @@ function applyHintCells(hint) {
 
 // Hint button click handler
 document.getElementById('hintBtn').onclick = () => {
-    if (isWon) return;
+    if (isWon || !isHintsEnabled()) return;
     ChipSound.click();
     clearHintHighlights();
     const hint = getHint();
@@ -5735,11 +5959,41 @@ function updateAssistUI() {
     updateToggleUI('visualHintsBtn', 'visualHintsState', assistSettings.visualHints.enabled);
     updateToggleUI('errorIndicatorsBtn', 'errorIndicatorsState', assistSettings.visualHints.errorIndicators);
     updateToggleUI('progressIndicatorsBtn', 'progressIndicatorsState', assistSettings.visualHints.progressIndicators);
+    updateToggleUI('hintsEnabledBtn', 'hintsEnabledState', assistSettings.visualHints.hintsEnabled);
     updateToggleUI('autoFillBtn', 'autoFillState', assistSettings.autoFill.enabled);
     updateToggleUI('deadEndFillBtn', 'deadEndFillState', assistSettings.autoFill.deadEndFill);
     updateToggleUI('wallCompletionBtn', 'wallCompletionState', assistSettings.autoFill.wallCompletion);
     updateToggleUI('pathCompletionBtn', 'pathCompletionState', assistSettings.autoFill.pathCompletion);
     updateToggleUI('applyHintsBtn', 'applyHintsState', assistSettings.autoFill.applyHints);
+
+    // Update hint button and mode visibility based on hints enabled
+    updateHintVisibility();
+}
+
+// Update visibility of hint-related UI elements
+function updateHintVisibility() {
+    const hintsEnabled = isHintsEnabled();
+    const hintBtn = document.getElementById('hintBtn');
+    const modeHint = document.getElementById('modeHint');
+    const applyHintsBtn = document.getElementById('applyHintsBtn');
+
+    if (hintBtn) {
+        hintBtn.style.display = hintsEnabled ? '' : 'none';
+    }
+    if (modeHint) {
+        modeHint.style.display = hintsEnabled ? '' : 'none';
+    }
+    if (applyHintsBtn) {
+        applyHintsBtn.style.display = hintsEnabled ? '' : 'none';
+    }
+
+    // If hints are disabled and we're in hint mode, switch to smart mode
+    if (!hintsEnabled && drawingMode === 'hint') {
+        drawingMode = 'smart';
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === 'smart');
+        });
+    }
 }
 
 // Propagate state changes down the hierarchy
@@ -5768,7 +6022,7 @@ function propagateAutoFillState(enabled) {
 // Check if all children are enabled to update parent state
 function updateParentStates() {
     // Update visualHints.enabled based on children
-    assistSettings.visualHints.enabled = assistSettings.visualHints.errorIndicators || assistSettings.visualHints.progressIndicators;
+    assistSettings.visualHints.enabled = assistSettings.visualHints.errorIndicators || assistSettings.visualHints.progressIndicators || assistSettings.visualHints.hintsEnabled;
     // Update autoFill.enabled based on children
     assistSettings.autoFill.enabled = assistSettings.autoFill.deadEndFill || assistSettings.autoFill.wallCompletion || assistSettings.autoFill.pathCompletion || assistSettings.autoFill.applyHints;
     // Update master enabled based on children
@@ -5830,6 +6084,15 @@ document.getElementById('errorIndicatorsBtn').onclick = () => {
 document.getElementById('progressIndicatorsBtn').onclick = () => {
     ChipSound.click();
     assistSettings.visualHints.progressIndicators = !assistSettings.visualHints.progressIndicators;
+    updateParentStates();
+    saveAssistSettings();
+    updateAssistUI();
+    update();
+};
+
+document.getElementById('hintsEnabledBtn').onclick = () => {
+    ChipSound.click();
+    assistSettings.visualHints.hintsEnabled = !assistSettings.visualHints.hintsEnabled;
     updateParentStates();
     saveAssistSettings();
     updateAssistUI();
@@ -5914,13 +6177,34 @@ function updateStatsDisplay() {
     updateSizeStats(currentStatsSize);
 }
 
+// Update stats tabs to show locked/unlocked states
+function updateStatsTabs() {
+    const maxUnlocked = getMaxUnlockedSize();
+    document.querySelectorAll('.stats-tab').forEach(tab => {
+        const size = parseInt(tab.dataset.size);
+        if (size > maxUnlocked) {
+            tab.classList.add('locked');
+            tab.textContent = `${size}×${size} 🔒`;
+        } else {
+            tab.classList.remove('locked');
+            tab.textContent = `${size}×${size}`;
+        }
+    });
+}
+
 // Stats size tab switching
 document.querySelectorAll('.stats-tab').forEach(tab => {
     tab.onclick = () => {
+        const size = parseInt(tab.dataset.size);
+        // Don't allow clicking locked tabs
+        if (!isSizeUnlocked(size)) {
+            ChipSound.error();
+            return;
+        }
         ChipSound.click();
         document.querySelectorAll('.stats-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
-        currentStatsSize = parseInt(tab.dataset.size);
+        currentStatsSize = size;
         updateSizeStats(currentStatsSize);
     };
 });
@@ -5928,10 +6212,13 @@ document.querySelectorAll('.stats-tab').forEach(tab => {
 document.getElementById('statsBtn').onclick = () => {
     ChipSound.click();
     document.getElementById('menuOverlay').classList.remove('visible');
-    // Set active tab to current puzzle size
-    currentStatsSize = SIZE;
+    // Update locked states
+    updateStatsTabs();
+    // Set active tab to current puzzle size (or max unlocked if current is locked)
+    const maxUnlocked = getMaxUnlockedSize();
+    currentStatsSize = SIZE <= maxUnlocked ? SIZE : maxUnlocked;
     document.querySelectorAll('.stats-tab').forEach(t => {
-        t.classList.toggle('active', parseInt(t.dataset.size) === SIZE);
+        t.classList.toggle('active', parseInt(t.dataset.size) === currentStatsSize);
     });
     updateStatsDisplay();
     document.getElementById('statsOverlay').classList.add('visible');
@@ -5971,6 +6258,50 @@ clearStatsDialog.addEventListener('click', (e) => {
     }
 });
 
+// Reset All Data dialog
+const resetAllDataDialog = document.getElementById('resetAllDataDialog');
+
+document.getElementById('resetAllDataBtn').onclick = () => {
+    ChipSound.click();
+    resetAllDataDialog.showModal();
+};
+
+document.getElementById('resetAllCancelBtn').onclick = () => {
+    ChipSound.click();
+    resetAllDataDialog.close();
+};
+
+document.getElementById('resetAllConfirmBtn').onclick = () => {
+    ChipSound.click();
+
+    // Clear all data
+    PlayerStats.clear();
+    GameState.clear();
+    clearTutorialCompleted();
+
+    // Reset runtime state
+    winStreak = 0;
+    hasCompletedTutorial = false;
+
+    // Update UI
+    updateGridSizeSelect();
+
+    // Close dialogs and menu
+    resetAllDataDialog.close();
+    closeMenu();
+
+    // Start fresh with tutorial
+    startTutorial(false);
+};
+
+// Close dialog when clicking backdrop
+resetAllDataDialog.addEventListener('click', (e) => {
+    if (e.target === resetAllDataDialog) {
+        ChipSound.click();
+        resetAllDataDialog.close();
+    }
+});
+
 // Close stats overlay when clicking outside
 document.getElementById('statsOverlay').onclick = (e) => {
     if (e.target.id === 'statsOverlay') {
@@ -5993,6 +6324,11 @@ document.querySelectorAll('.briefing-tab').forEach(tab => {
 // Mode button switching
 document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.onclick = () => {
+        // Block hint mode if hints are not enabled
+        if (btn.dataset.mode === 'hint' && !isHintsEnabled()) {
+            ChipSound.error();
+            return;
+        }
         ChipSound.click();
         document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -6033,13 +6369,15 @@ function updateBriefingTerminology(theme) {
     const stockpileDesc = document.getElementById('stockpileDesc');
     if (stockpileDesc && t.stockpileDesc) stockpileDesc.textContent = t.stockpileDesc;
 
-    // Update vault description (keeping the stockpile tag)
+    // Update vault description (keeping the stockpile tag and replacing size placeholder)
     const vaultDesc = document.getElementById('vaultDesc');
     if (vaultDesc && t.vaultDesc) {
-        vaultDesc.innerHTML = t.vaultDesc.replace(
-            /Stockpile|Data Stockpile|Beehive/gi,
-            `<span class="briefing-tag theme-stockpile">${t.stockpile}</span>`
-        );
+        vaultDesc.innerHTML = t.vaultDesc
+            .replace(/{VAULT_SIZE}/g, `${DATA_VAULT_UNLOCK_SIZE}×${DATA_VAULT_UNLOCK_SIZE}`)
+            .replace(
+                /Stockpile|Data Stockpile|Beehive/gi,
+                `<span class="briefing-tag theme-stockpile">${t.stockpile}</span>`
+            );
     }
 
     // Update all theme-specific spans
@@ -6051,6 +6389,299 @@ function updateBriefingTerminology(theme) {
     document.querySelectorAll('.theme-fork').forEach(el => el.textContent = t.fork || 'Fork');
     document.querySelectorAll('.theme-commit').forEach(el => el.textContent = t.commit || 'Commit');
     document.querySelectorAll('.theme-discard').forEach(el => el.textContent = t.discard || 'Discard');
+}
+
+// ============================================
+// TUTORIAL SYSTEM
+// ============================================
+
+// Load data vault intro seen flag from localStorage
+function loadDataVaultIntroSeen() {
+    try {
+        return localStorage.getItem('hasSeenDataVaultIntro') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+// Save data vault intro seen flag to localStorage
+function saveDataVaultIntroSeen() {
+    try {
+        localStorage.setItem('hasSeenDataVaultIntro', 'true');
+    } catch (e) {
+        // Ignore storage errors
+    }
+}
+
+// Load tutorial completed flag from localStorage
+function loadTutorialCompleted() {
+    try {
+        return localStorage.getItem('hasCompletedTutorial') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+// Save tutorial completed flag to localStorage
+function saveTutorialCompleted() {
+    try {
+        localStorage.setItem('hasCompletedTutorial', 'true');
+    } catch (e) {
+        // Ignore storage errors
+    }
+}
+
+// Clear tutorial completed flag from localStorage
+function clearTutorialCompleted() {
+    try {
+        localStorage.removeItem('hasCompletedTutorial');
+    } catch (e) {
+        // Ignore storage errors
+    }
+}
+
+// Start tutorial mode
+function startTutorial(useCurrentPuzzle = false) {
+    // Exit any existing tutorial mode
+    endTutorial();
+
+    isTutorialMode = true;
+    isUserInitiatedTutorial = useCurrentPuzzle;
+    tutorialHint = null;
+
+    // Close menu if open
+    closeMenu();
+
+    // Switch to Auto tool
+    drawingMode = 'smart';
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === 'smart');
+    });
+
+    if (!useCurrentPuzzle) {
+        // Set to 4x4 and generate tutorial puzzle with specific seed
+        document.getElementById('gridSizeSelect').value = '4';
+        init(false, 'ZXN8YB'); // Use tutorial seed
+    } else {
+        // Reset current puzzle
+        layers = [Array(SIZE * SIZE).fill(0)];
+        forkAnchors = [null, null, null, null];
+        currentIdx = 0;
+        undoState = null;
+        document.getElementById('undoBtn').disabled = true;
+        updateButtonStates();
+        render();
+    }
+
+    // Show intro dialog
+    const dialog = document.getElementById('tutorialIntroDialog');
+    if (dialog) {
+        dialog.showModal();
+    }
+}
+
+// End tutorial mode
+function endTutorial() {
+    isTutorialMode = false;
+    tutorialHint = null;
+
+    // Clear tutorial-specific UI
+    const toast = document.getElementById('hintToast');
+    if (toast) {
+        toast.classList.remove('tutorial-mode');
+    }
+    clearHintHighlights();
+    hideHintToast();
+}
+
+// Show the next tutorial hint
+function showTutorialHint() {
+    if (!isTutorialMode) return;
+
+    const hint = getHint();
+    if (!hint) {
+        // No more hints - puzzle should be complete
+        return;
+    }
+
+    tutorialHint = hint;
+
+    // Show hint in persistent mode
+    const toast = document.getElementById('hintToast');
+    const message = document.getElementById('hintMessage');
+
+    message.textContent = hint.message;
+
+    toast.classList.remove('fading');
+    toast.classList.add('visible', 'tutorial-mode');
+
+    // Clear any existing timeouts - tutorial hints don't auto-hide
+    if (hintToastTimeout) {
+        clearTimeout(hintToastTimeout);
+        hintToastTimeout = null;
+    }
+
+    // Apply highlight without auto-clear
+    clearHintHighlights();
+    applyTutorialHighlight(hint);
+}
+
+// Clear tutorial tool highlight
+function clearTutorialToolHighlight() {
+    document.querySelectorAll('.mode-btn.tutorial-tool-highlight').forEach(btn => {
+        btn.classList.remove('tutorial-tool-highlight');
+    });
+}
+
+// Apply hint highlight for tutorial (persistent, no auto-clear)
+function applyTutorialHighlight(hint) {
+    if (!hint || !hint.highlight) return;
+
+    const hl = hint.highlight;
+    const gridCells = document.getElementById('mainGrid').querySelectorAll('.cell');
+
+    // Show coordinate labels
+    showCellCoordinates(hint);
+
+    // Highlight the required tool based on shouldBe
+    clearTutorialToolHighlight();
+    if (hint.shouldBe) {
+        const toolMode = hint.shouldBe === 'wall' ? 'wall' : 'path';
+        const toolBtn = document.querySelector(`.mode-btn[data-mode="${toolMode}"]`);
+        if (toolBtn) {
+            toolBtn.classList.add('tutorial-tool-highlight');
+        }
+    }
+
+    if (hl.type === 'cell') {
+        const idx = hl.r * SIZE + hl.c;
+        if (gridCells[idx]) {
+            gridCells[idx].classList.add('hint-highlight-cell', 'tutorial-persistent');
+        }
+    } else if (hl.type === 'cells') {
+        for (const cell of hl.cells) {
+            const idx = cell.r * SIZE + cell.c;
+            if (gridCells[idx]) {
+                gridCells[idx].classList.add('hint-highlight-cell', 'tutorial-persistent');
+            }
+        }
+    } else if (hl.type === 'row') {
+        for (let c = 0; c < SIZE; c++) {
+            const idx = hl.index * SIZE + c;
+            if (gridCells[idx]) {
+                gridCells[idx].classList.add('hint-highlight-row', 'tutorial-persistent');
+            }
+        }
+        const rowLabels = document.querySelectorAll('.row-labels .count-neon');
+        if (rowLabels[hl.index]) {
+            rowLabels[hl.index].classList.add('hint-highlight-label', 'tutorial-persistent');
+        }
+    } else if (hl.type === 'col') {
+        for (let r = 0; r < SIZE; r++) {
+            const idx = r * SIZE + hl.index;
+            if (gridCells[idx]) {
+                gridCells[idx].classList.add('hint-highlight-col', 'tutorial-persistent');
+            }
+        }
+        const colLabels = document.querySelectorAll('.col-labels .count-neon');
+        if (colLabels[hl.index]) {
+            colLabels[hl.index].classList.add('hint-highlight-label', 'tutorial-persistent');
+        }
+    }
+
+    // No auto-clear timeout for tutorial mode
+}
+
+// Check if a move is valid in tutorial mode
+function isTutorialMoveValid(r, c, newValue) {
+    if (!isTutorialMode || !tutorialHint) return true;
+
+    // Check if this cell is part of the current hint
+    if (!tutorialHint.cells) return true;
+
+    const isHintCell = tutorialHint.cells.some(hc => hc.r === r && hc.c === c);
+    if (!isHintCell) {
+        // Not a hint cell - block the move
+        ChipSound.error();
+        return false;
+    }
+
+    // Check if the value matches what the hint expects
+    const expectedValue = tutorialHint.shouldBe === 'wall' ? 1 : 2;
+    if (newValue !== expectedValue) {
+        // Wrong value - block the move
+        ChipSound.error();
+        return false;
+    }
+
+    return true;
+}
+
+// Check if all hint cells are completed
+function checkTutorialHintComplete() {
+    if (!isTutorialMode || !tutorialHint || !tutorialHint.cells) return false;
+
+    const merged = getMergedBoard();
+    const expectedValue = tutorialHint.shouldBe === 'wall' ? 1 : 2;
+
+    for (const cell of tutorialHint.cells) {
+        const idx = cell.r * SIZE + cell.c;
+        if (merged[idx] !== expectedValue) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+// Called after each move in tutorial mode
+function onTutorialMove() {
+    if (!isTutorialMode) return;
+
+    // Check if current hint is complete
+    if (checkTutorialHintComplete()) {
+        // Clear current hint and show next
+        clearHintHighlights();
+
+        // Small delay before showing next hint
+        setTimeout(() => {
+            if (isTutorialMode && !isWon) {
+                showTutorialHint();
+            }
+        }, 300);
+    }
+}
+
+// Show tutorial completion dialog
+function showTutorialComplete() {
+    const wasUserInitiated = isUserInitiatedTutorial;
+    endTutorial();
+
+    // Mark tutorial as completed (for standard tutorial only)
+    if (!wasUserInitiated) {
+        hasCompletedTutorial = true;
+        saveTutorialCompleted();
+    }
+
+    // Show appropriate dialog based on tutorial type
+    const dialogId = wasUserInitiated ? 'userTutorialCompleteDialog' : 'tutorialCompleteDialog';
+    const dialog = document.getElementById(dialogId);
+    if (dialog) {
+        dialog.showModal();
+    }
+}
+
+// Show data vault intro dialog
+function showDataVaultIntro() {
+    if (hasSeenDataVaultIntro) return;
+
+    hasSeenDataVaultIntro = true;
+    saveDataVaultIntroSeen();
+
+    const dialog = document.getElementById('dataVaultIntroDialog');
+    if (dialog) {
+        dialog.showModal();
+    }
 }
 
 window.onload = () => {
@@ -6118,28 +6749,48 @@ window.onload = () => {
         }
     });
 
-    // Try to restore saved game state, otherwise start new game
-    const savedState = GameState.load();
-    if (savedState) {
-        restoreGameState(savedState);
+    // Load tutorial completed flag
+    hasCompletedTutorial = loadTutorialCompleted();
+
+    // Update grid size select to show locked/unlocked states
+    updateGridSizeSelect();
+
+    // If tutorial not completed, always start with tutorial
+    if (!hasCompletedTutorial) {
+        // Clear any saved state so we don't restore mid-tutorial progress
+        GameState.clear();
+        startTutorial(false);
     } else {
-        init(true);
+        // Try to restore saved game state, otherwise start new game
+        const savedState = GameState.load();
+        if (savedState) {
+            restoreGameState(savedState);
+        } else {
+            // Start at max unlocked size (or 4x4 if just completed tutorial)
+            const maxUnlocked = getMaxUnlockedSize();
+            document.getElementById('gridSizeSelect').value = String(maxUnlocked);
+            init(true);
+        }
     }
 
-    // Save game state when page is about to unload
+    // Save game state when page is about to unload (only if tutorial completed)
     window.addEventListener('beforeunload', () => {
-        GameState.save();
-    });
-
-    // Also save periodically and after state changes via visibilitychange
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden') {
+        if (hasCompletedTutorial && !isTutorialMode) {
             GameState.save();
         }
     });
 
-    // Show briefing on startup if not disabled by cookie
-    showBriefingOnStartup();
+    // Also save periodically and after state changes via visibilitychange
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && hasCompletedTutorial && !isTutorialMode) {
+            GameState.save();
+        }
+    });
+
+    // Show briefing on startup if not disabled by cookie (only if tutorial completed)
+    if (hasCompletedTutorial) {
+        showBriefingOnStartup();
+    }
 
     // Load user preferences and apply them
     const prefs = loadUserPreferences();
@@ -6183,4 +6834,105 @@ window.onload = () => {
         }
         update(); // Re-render grid to show overlay
     }
+
+    // Load data vault intro seen flag
+    hasSeenDataVaultIntro = loadDataVaultIntroSeen();
+
+    // Tutorial dialog handlers
+    const tutorialIntroDialog = document.getElementById('tutorialIntroDialog');
+    const tutorialCompleteDialog = document.getElementById('tutorialCompleteDialog');
+    const dataVaultIntroDialog = document.getElementById('dataVaultIntroDialog');
+
+    // Tutorial intro - start button
+    document.getElementById('tutorialIntroStartBtn').onclick = () => {
+        ChipSound.click();
+        tutorialIntroDialog.close();
+        // Start showing hints after a brief delay
+        setTimeout(() => {
+            showTutorialHint();
+        }, 500);
+    };
+
+    // Tutorial complete - continue button
+    document.getElementById('tutorialCompleteBtn').onclick = () => {
+        ChipSound.click();
+        tutorialCompleteDialog.close();
+        // Start a new level after tutorial
+        init(false); // Keep streak, start new puzzle at current size
+    };
+
+    // User tutorial complete - continue button
+    const userTutorialCompleteDialog = document.getElementById('userTutorialCompleteDialog');
+    document.getElementById('userTutorialCompleteBtn').onclick = () => {
+        ChipSound.click();
+        userTutorialCompleteDialog.close();
+        // Start a new level after tutorial
+        init(false); // Keep streak, start new puzzle at current size
+    };
+
+    // Data vault intro - skip button
+    document.getElementById('dataVaultSkipBtn').onclick = () => {
+        ChipSound.click();
+        dataVaultIntroDialog.close();
+    };
+
+    // Data vault intro - start tutorial button
+    document.getElementById('dataVaultTutorialBtn').onclick = () => {
+        ChipSound.click();
+        dataVaultIntroDialog.close();
+        startTutorial(true); // Use current puzzle
+    };
+
+    // Menu tutorial buttons
+    document.getElementById('tutorialBtn').onclick = () => {
+        ChipSound.click();
+        startTutorial(false); // New 4x4 puzzle
+    };
+
+    document.getElementById('tutorialCurrentBtn').onclick = () => {
+        ChipSound.click();
+        startTutorial(true); // Current puzzle
+    };
+
+    // Level unlocked dialog buttons
+    const levelUnlockedDialog = document.getElementById('levelUnlockedDialog');
+
+    document.getElementById('stayCurrentSizeBtn').onclick = () => {
+        ChipSound.click();
+        levelUnlockedDialog.close();
+        // Start new puzzle at current size
+        init(false);
+    };
+
+    document.getElementById('tryNewSizeBtn').onclick = () => {
+        ChipSound.click();
+        levelUnlockedDialog.close();
+        // Switch to the new size and start a puzzle
+        const newSize = parseInt(levelUnlockedDialog.dataset.newSize);
+        if (newSize) {
+            document.getElementById('gridSizeSelect').value = newSize;
+            // Special seed for first data vault puzzle
+            if (newSize === DATA_VAULT_UNLOCK_SIZE) {
+                init(false, DATA_VAULT_FIRST_SEED);
+            } else {
+                init(false);
+            }
+        } else {
+            init(false);
+        }
+    };
+
+    // Close dialogs on backdrop click
+    [tutorialIntroDialog, tutorialCompleteDialog, dataVaultIntroDialog, levelUnlockedDialog].forEach(dialog => {
+        if (dialog) {
+            dialog.addEventListener('click', (e) => {
+                if (e.target === dialog) {
+                    // Don't close tutorial intro or level unlocked by clicking backdrop
+                    if (dialog !== tutorialIntroDialog && dialog !== levelUnlockedDialog) {
+                        dialog.close();
+                    }
+                }
+            });
+        }
+    });
 };

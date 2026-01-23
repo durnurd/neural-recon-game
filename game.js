@@ -3367,6 +3367,170 @@ document.getElementById('decryptToggleBtn').onclick = () => {
 };
 
 // ============================================
+// HINT SYSTEM HELPER FUNCTIONS
+
+// Find empty cells in a row, optionally excluding cells adjacent to a given position
+function findEmptyCellsInRow(merged, r, excludeAdjacentTo = null) {
+    const emptyCells = [];
+    for (let c = 0; c < SIZE; c++) {
+        if (excludeAdjacentTo && Math.abs(c - excludeAdjacentTo.c) <= 1) continue;
+        const idx = r * SIZE + c;
+        if (merged[idx] === 0 && !isFixedPath(r, c)) {
+            emptyCells.push({ r, c });
+        }
+    }
+    return emptyCells;
+}
+
+// Find empty cells in a column, optionally excluding cells adjacent to a given position
+function findEmptyCellsInCol(merged, c, excludeAdjacentTo = null) {
+    const emptyCells = [];
+    for (let r = 0; r < SIZE; r++) {
+        if (excludeAdjacentTo && Math.abs(r - excludeAdjacentTo.r) <= 1) continue;
+        const idx = r * SIZE + c;
+        if (merged[idx] === 0 && !isFixedPath(r, c)) {
+            emptyCells.push({ r, c });
+        }
+    }
+    return emptyCells;
+}
+
+// Get perpendicular cells to a position (above/below for rows, left/right for columns)
+// Returns array of {r, c, isEmpty} objects for cells that can be checked
+function getPerpendicularCells(merged, r, c, direction) {
+    const cells = [];
+    if (direction === 'row') {
+        // For rows, perpendicular means above and below
+        if (r > 0) {
+            const idx = (r - 1) * SIZE + c;
+            cells.push({ r: r - 1, c, isEmpty: merged[idx] === 0 && !isFixedPath(r - 1, c) });
+        }
+        if (r < SIZE - 1) {
+            const idx = (r + 1) * SIZE + c;
+            cells.push({ r: r + 1, c, isEmpty: merged[idx] === 0 && !isFixedPath(r + 1, c) });
+        }
+    } else {
+        // For columns, perpendicular means left and right
+        if (c > 0) {
+            const idx = r * SIZE + (c - 1);
+            cells.push({ r, c: c - 1, isEmpty: merged[idx] === 0 && !isFixedPath(r, c - 1) });
+        }
+        if (c < SIZE - 1) {
+            const idx = r * SIZE + (c + 1);
+            cells.push({ r, c: c + 1, isEmpty: merged[idx] === 0 && !isFixedPath(r, c + 1) });
+        }
+    }
+    return cells;
+}
+
+// Create a hint object with standardized structure and forCell filtering
+function createHintObject(cells, shouldBe, message, highlight, forCell = null) {
+    if (!cells || cells.length === 0) return null;
+    
+    // If forCell is specified, check if any cell matches
+    if (forCell) {
+        const matches = cells.some(cell => cell.r === forCell.r && cell.c === forCell.c);
+        if (!matches) return null;
+    }
+    
+    return {
+        message,
+        highlight,
+        cells,
+        shouldBe
+    };
+}
+
+// Generic function to check a row or column for hints
+// isRow: true for rows, false for columns
+// index: row number or column number
+// checkFn: callback(counts, emptyCells, isRow, index) that returns hint object or null
+function checkRowColForHint(merged, isRow, index, checkFn, forCell = null) {
+    const counts = isRow ? getRowCounts(merged, index) : getColCounts(merged, index);
+    const emptyCells = isRow 
+        ? findEmptyCellsInRow(merged, index)
+        : findEmptyCellsInCol(merged, index);
+    
+    if (emptyCells.length === 0) return null;
+    
+    const hint = checkFn(counts, emptyCells, isRow, index);
+    if (!hint) return null;
+    
+    // Apply forCell filtering if specified
+    if (forCell) {
+        const matches = emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c);
+        if (!matches) return null;
+    }
+    
+    return hint;
+}
+
+// Count neighbors of a cell (walls, paths, empty cells)
+// Returns { wallCount, pathCount, emptyCount, emptyCells, wallCells, pathCells }
+// emptyCells, wallCells, pathCells are arrays of {r, c} objects
+function countNeighbors(merged, r, c, treatEdgesAsWalls = true) {
+    let wallCount = 0;
+    let pathCount = 0;
+    let emptyCount = 0;
+    const emptyCells = [];
+    const wallCells = [];
+    const pathCells = [];
+
+    for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
+            if (treatEdgesAsWalls) {
+                wallCount++;
+            }
+            continue;
+        }
+        const nIdx = nr * SIZE + nc;
+        if (merged[nIdx] === 1) {
+            wallCount++;
+            wallCells.push({ r: nr, c: nc });
+        } else if (merged[nIdx] === 2 || isFixedPath(nr, nc)) {
+            pathCount++;
+            pathCells.push({ r: nr, c: nc });
+        } else {
+            emptyCount++;
+            emptyCells.push({ r: nr, c: nc });
+        }
+    }
+
+    return { wallCount, pathCount, emptyCount, emptyCells, wallCells, pathCells };
+}
+
+// Generic function to iterate all cells and collect hints with forCell support
+// checkFn: callback(merged, r, c) that returns hint object or null
+// Returns the first hint that matches forCell, or the best candidate if no forCell
+function iterateAllCellsForHint(merged, checkFn, forCell = null, bestSelector = null) {
+    const candidates = [];
+    
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            const hint = checkFn(merged, r, c);
+            if (!hint) continue;
+            
+            // If forCell is specified, check if hint includes that cell
+            if (forCell && hint.cells) {
+                const matches = hint.cells.some(cell => cell.r === forCell.r && cell.c === forCell.c);
+                if (matches) return hint;
+            }
+            
+            candidates.push(hint);
+        }
+    }
+    
+    if (forCell) return null;
+    if (candidates.length === 0) return null;
+    
+    // Use bestSelector if provided, otherwise return first
+    if (bestSelector) {
+        return candidates.reduce(bestSelector);
+    }
+    return candidates[0];
+}
+
 // HINT SYSTEM
 // ============================================
 
@@ -3664,70 +3828,46 @@ function hintCheckMistakes(merged, onlyObvious = false) {
 function hintTrivialRowCol(merged, forCell = null) {
     const candidates = [];
 
-    // Check rows for trivial cases (0 walls = all paths, SIZE walls = all walls)
-    for (let r = 0; r < SIZE; r++) {
-        const { walls, paths, target, expectedPaths } = getRowCounts(merged, r);
-        const emptyCells = [];
-        for (let c = 0; c < SIZE; c++) {
-            const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
-        }
-        if (emptyCells.length === 0) continue;
+    // Check function for trivial cases
+    function checkTrivial(counts, emptyCells, isRow, index) {
+        const { walls, paths, target } = counts;
+        if (emptyCells.length === 0) return null;
 
-        let hint = null;
         // Only handle trivial cases: target is 0 or SIZE
         if (target === 0 && walls === 0) {
-            hint = {
-                message: `Row ${rowToNumber(r)} needs 0 walls, so all cells must be paths.`,
-                highlight: { type: 'row', index: r },
+            const lineName = isRow ? `Row ${rowToNumber(index)}` : `Column ${colToLetter(index)}`;
+            return {
+                message: `${lineName} needs 0 walls, so all cells must be paths.`,
+                highlight: isRow ? { type: 'row', index } : { type: 'col', index },
                 cells: emptyCells, shouldBe: 'path'
             };
         } else if (target === SIZE && paths === 0) {
-            hint = {
-                message: `Row ${rowToNumber(r)} needs ${SIZE} walls, so all cells must be walls.`,
-                highlight: { type: 'row', index: r },
+            const lineName = isRow ? `Row ${rowToNumber(index)}` : `Column ${colToLetter(index)}`;
+            return {
+                message: `${lineName} needs ${SIZE} walls, so all cells must be walls.`,
+                highlight: isRow ? { type: 'row', index } : { type: 'col', index },
                 cells: emptyCells, shouldBe: 'wall'
             };
         }
+        return null;
+        }
 
+    // Check rows
+    for (let r = 0; r < SIZE; r++) {
+        const hint = checkRowColForHint(merged, true, r, (counts, emptyCells) => 
+            checkTrivial(counts, emptyCells, true, r), forCell);
         if (hint) {
-            if (forCell && emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c)) {
-                return hint;
-            }
+            if (forCell) return hint;
             candidates.push(hint);
         }
     }
 
-    // Check columns for trivial cases
+    // Check columns
     for (let c = 0; c < SIZE; c++) {
-        const { walls, paths, target, expectedPaths } = getColCounts(merged, c);
-        const emptyCells = [];
-        for (let r = 0; r < SIZE; r++) {
-            const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
-        }
-        if (emptyCells.length === 0) continue;
-
-        let hint = null;
-        // Only handle trivial cases: target is 0 or SIZE
-        if (target === 0 && walls === 0) {
-            hint = {
-                message: `Column ${colToLetter(c)} needs 0 walls, so all cells must be paths.`,
-                highlight: { type: 'col', index: c },
-                cells: emptyCells, shouldBe: 'path'
-            };
-        } else if (target === SIZE && paths === 0) {
-            hint = {
-                message: `Column ${colToLetter(c)} needs ${SIZE} walls, so all cells must be walls.`,
-                highlight: { type: 'col', index: c },
-                cells: emptyCells, shouldBe: 'wall'
-            };
-        }
-
+        const hint = checkRowColForHint(merged, false, c, (counts, emptyCells) => 
+            checkTrivial(counts, emptyCells, false, c), forCell);
         if (hint) {
-            if (forCell && emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c)) {
-                return hint;
-            }
+            if (forCell) return hint;
             candidates.push(hint);
         }
     }
@@ -3742,75 +3882,49 @@ function hintRowColComplete(merged, forCell = null) {
     // Collect all possible hints and return the one with the most cells
     const candidates = [];
 
-    // Check rows
-    for (let r = 0; r < SIZE; r++) {
-        const { walls, paths, target, expectedPaths } = getRowCounts(merged, r);
-        // Check if there are empty cells to fill
-        const emptyCells = [];
-        for (let c = 0; c < SIZE; c++) {
-            const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
-        }
-        if (emptyCells.length === 0) continue;
-        
+    // Check function for completion cases
+    function checkComplete(counts, emptyCells, isRow, index) {
+        const { walls, paths, target, expectedPaths } = counts;
+        if (emptyCells.length === 0) return null;
 
+        const lineName = isRow ? `Row ${rowToNumber(index)}` : `Column ${colToLetter(index)}`;
         let hint = null;
+
         if (walls === target) {
             const pathMessage = emptyCells.length === 1 ? 'The remaining cell must be a path' : 'The remaining cells must all be paths';
             hint = {
-                message: `Row ${rowToNumber(r)} has all its walls. ${pathMessage}.`,
-                highlight: { type: 'row', index: r },
+                message: `${lineName} has all its walls. ${pathMessage}.`,
+                highlight: isRow ? { type: 'row', index } : { type: 'col', index },
                 cells: emptyCells, shouldBe: 'path'
             };
         } else if (paths === expectedPaths) {
             const wallMessage = emptyCells.length === 1 ? 'The remaining cell must be a wall' : 'The remaining cells must all be walls';
             hint = {
-                message: `Row ${rowToNumber(r)} has all its paths. ${wallMessage}.`,
-                highlight: { type: 'row', index: r },
+                message: `${lineName} has all its paths. ${wallMessage}.`,
+                highlight: isRow ? { type: 'row', index } : { type: 'col', index },
                 cells: emptyCells, shouldBe: 'wall'
             };
         }
 
-        if (hint) {
-            if (forCell && emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c)) {
                 return hint;
             }
+
+    // Check rows
+    for (let r = 0; r < SIZE; r++) {
+        const hint = checkRowColForHint(merged, true, r, (counts, emptyCells) => 
+            checkComplete(counts, emptyCells, true, r), forCell);
+        if (hint) {
+            if (forCell) return hint;
             candidates.push(hint);
         }
     }
 
     // Check columns
     for (let c = 0; c < SIZE; c++) {
-        const { walls, paths, target, expectedPaths } = getColCounts(merged, c);
-        // Check if there are empty cells to fill
-        const emptyCells = [];
-        for (let r = 0; r < SIZE; r++) {
-            const idx = r * SIZE + c;
-            if (merged[idx] === 0 && !isFixedPath(r, c)) emptyCells.push({ r, c });
-        }
-        if (emptyCells.length === 0) continue;
-
-        let hint = null;
-        if (walls === target) {
-            const pathMessage = emptyCells.length === 1 ? 'The remaining cell must be a path' : 'The remaining cells must all be paths';
-            hint = {
-                message: `Column ${colToLetter(c)} has all its walls. ${pathMessage}.`,
-                highlight: { type: 'col', index: c },
-                cells: emptyCells, shouldBe: 'path'
-            };
-        } else if (paths === expectedPaths) {
-            const wallMessage = emptyCells.length === 1 ? 'The remaining cell must be a wall' : 'The remaining cells must all be walls';
-            hint = {
-                message: `Column ${colToLetter(c)} has all its paths. ${wallMessage}.`,
-                highlight: { type: 'col', index: c },
-                cells: emptyCells, shouldBe: 'wall'
-            };
-        }
-
+        const hint = checkRowColForHint(merged, false, c, (counts, emptyCells) => 
+            checkComplete(counts, emptyCells, false, c), forCell);
         if (hint) {
-            if (forCell && emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c)) {
-                return hint;
-            }
+            if (forCell) return hint;
             candidates.push(hint);
         }
     }
@@ -3823,36 +3937,10 @@ function hintRowColComplete(merged, forCell = null) {
 
 // Hint 3: Dead end can be finished (has 1 path or 3 walls around it)
 function hintDeadEndCanBeFinished(merged, forCell = null) {
-    // Collect all possible hints and return the one with the most cells
-    const candidates = [];
+    function checkDeadEnd(merged, r, c) {
+        if (!isTargetDeadEnd(r, c)) return null;
 
-    for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
-            if (!isTargetDeadEnd(r, c)) continue;
-
-            let pathCount = 0;
-            let wallCount = 0;
-            let emptyCount = 0;
-            const emptyCells = [];
-
-            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-                const nr = r + dr, nc = c + dc;
-                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
-                    wallCount++; // Edge of grid counts as wall
-                    continue;
-                }
-                const nIdx = nr * SIZE + nc;
-                if (merged[nIdx] === 1) {
-                    wallCount++;
-                } else if (merged[nIdx] === 2 || isFixedPath(nr, nc)) {
-                    pathCount++;
-                } else {
-                    emptyCount++;
-                    emptyCells.push({ r: nr, c: nc });
-                }
-            }
-
-            let hint = null;
+        const { pathCount, wallCount, emptyCount, emptyCells } = countNeighbors(merged, r, c);
 
             // Dead end has exactly 1 path - remaining empty neighbors must be walls
             if (pathCount === 1 && emptyCount > 0) {
@@ -3860,7 +3948,7 @@ function hintDeadEndCanBeFinished(merged, forCell = null) {
                 const cellWord = emptyCount === 1 ? 'Cell' : 'Cells';
                 const wallWord = emptyCount === 1 ? 'a wall' : 'walls';
                 const mustWord = emptyCount === 1 ? 'must' : emptyCount == 2 ? 'must both' : 'must all';
-                hint = {
+            return {
                     message: `${cellWord} ${cellList} ${mustWord} be ${wallWord} to complete the dead end at ${cellRef(r, c)}.`,
                     highlight: emptyCount === 1
                         ? { type: 'cell', r: emptyCells[0].r, c: emptyCells[0].c }
@@ -3872,26 +3960,18 @@ function hintDeadEndCanBeFinished(merged, forCell = null) {
             // Dead end has 3 walls - the remaining empty neighbor must be a path
             if (wallCount === 3 && emptyCount === 1 && pathCount === 0) {
                 const cell = emptyCells[0];
-                hint = {
+            return {
                     message: `Cell ${cellRef(cell.r, cell.c)} must be a path to complete the dead end at ${cellRef(r, c)}.`,
                     highlight: { type: 'cell', r: cell.r, c: cell.c },
                     cells: [cell], shouldBe: 'path'
                 };
             }
 
-            if (hint) {
-                if (forCell && emptyCells.some(ec => ec.r === forCell.r && ec.c === forCell.c)) {
-                    return hint;
-                }
-                candidates.push(hint);
-            }
-        }
+        return null;
     }
 
-    // Return the hint with the most cells
-    if (forCell) return null;
-    if (candidates.length === 0) return null;
-    return candidates.reduce((best, curr) => curr.cells.length > best.cells.length ? curr : best);
+    return iterateAllCellsForHint(merged, checkDeadEnd, forCell, 
+        (best, curr) => curr.cells.length > best.cells.length ? curr : best);
 }
 // Hint 4: Data cache vault constraints - some cells are guaranteed to be in the vault
 // Based on edges, walls, AND row/column wall requirements, we can determine which vault positions are valid
@@ -4471,24 +4551,14 @@ function hintRowColCompletionCausesError(merged) {
 // Hint: Empty cell surrounded by 3+ walls must be a wall
 // An empty cell with 3+ walls around it cannot be a path (would be an invalid dead end)
 function hintEmptyDeadEndMustBeWall(merged) {
-    for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
+    function checkEmptyCell(merged, r, c) {
             const idx = r * SIZE + c;
             // Only check empty cells
-            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+        if (merged[idx] !== 0 || isFixedPath(r, c)) return null;
             // Skip if it's a target dead end (those are valid path locations)
-            if (isTargetDeadEnd(r, c)) continue;
+        if (isTargetDeadEnd(r, c)) return null;
 
-            // Count walls around this empty cell
-            let wallCount = 0;
-            for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
-                const nr = r + dr, nc = c + dc;
-                if (nr < 0 || nr >= SIZE || nc < 0 || nc >= SIZE) {
-                    wallCount++; // Edge counts as wall
-                } else if (merged[nr * SIZE + nc] === 1) {
-                    wallCount++;
-                }
-            }
+        const { wallCount } = countNeighbors(merged, r, c);
 
             // If 3+ walls, this cell must be a wall (can't be a path - would be invalid dead end)
             if (wallCount >= 3) {
@@ -4498,9 +4568,11 @@ function hintEmptyDeadEndMustBeWall(merged) {
                     cells: [{ r, c }], shouldBe: 'wall'
                 };
             }
-        }
-    }
+
     return null;
+    }
+
+    return iterateAllCellsForHint(merged, checkEmptyCell);
 }
 
 // Hint 5: 2x2 area with 3 paths
@@ -4694,8 +4766,9 @@ function hintDeadEndOr2x2Squeeze(merged) {
 // Hint 4: Path flanked by walls must be extended
 // E.g., __WPW___ means the cell below P must be a path (otherwise P would be a dead end)
 function hintPathMustExtend(merged, forCell = null) {
-    // Helper to analyze a cell's neighbors
+    // Helper to analyze a cell's neighbors (using countNeighbors but with custom board)
     function analyzeCell(r, c, testBoard) {
+        // countNeighbors uses merged, so we need a custom version for test boards
         let wallCount = 0, emptyCount = 0, pathCount = 0;
         const emptyCells = [];
 
@@ -4804,14 +4877,10 @@ function hintPathMustExtend(merged, forCell = null) {
 // Hint 5: Corner with two flanking dead ends must be a wall
 // E.g., if A2 and B1 are dead ends, A1 must be a wall (a path there would be cut off)
 function hintCornerFlankingDeadEnds(merged) {
-    // Check all cells for "corner" patterns where two perpendicular directions
-    // are blocked (by walls or grid edges) and the other two have dead ends
-    for (let r = 0; r < SIZE; r++) {
-        for (let c = 0; c < SIZE; c++) {
+    function checkCorner(merged, r, c) {
             const idx = r * SIZE + c;
-
             // Only check empty cells
-            if (merged[idx] !== 0 || isFixedPath(r, c)) continue;
+        if (merged[idx] !== 0 || isFixedPath(r, c)) return null;
 
             // Check each orthogonal direction
             const dirs = [
@@ -4841,7 +4910,7 @@ function hintCornerFlankingDeadEnds(merged) {
             }
 
             // Need exactly 2 blocked directions and 2 dead end directions
-            if (blocked.length !== 2 || deadEnds.length !== 2) continue;
+        if (blocked.length !== 2 || deadEnds.length !== 2) return null;
 
             // Check if blocked directions are perpendicular (not opposite)
             // Perpendicular means one is vertical (dr !== 0) and one is horizontal (dc !== 0)
@@ -4856,9 +4925,11 @@ function hintCornerFlankingDeadEnds(merged) {
                     cells: [{ r, c }], shouldBe: 'wall'
                 };
             }
-        }
-    }
+
     return null;
+    }
+
+    return iterateAllCellsForHint(merged, checkCorner);
 }
 
 // Hint 5: Edge row/column with exactly 1 wall remaining - corners must have path next to them
@@ -4989,50 +5060,165 @@ function hintEdgeCornerDeadEnd(merged) {
 
 // Hint 5: Row/column needs N-1 walls, cells next to dead ends must be walls
 function hintDeadEndAdjacent(merged) {
-    // Check rows that need N-1 walls
-    for (let r = 0; r < SIZE; r++) {
-        const { walls, target } = getRowCounts(merged, r);
-        if (target === SIZE - 1) {
-            // Check adjacent rows for dead ends
-            for (const adjR of [r - 1, r + 1]) {
-                if (adjR < 0 || adjR >= SIZE) continue;
-                for (let c = 0; c < SIZE; c++) {
-                    if (isTargetDeadEnd(adjR, c)) {
-                        const idx = r * SIZE + c;
+    // Helper to check a line (row or column) for dead end adjacent hints
+    function checkLineForDeadEndAdjacent(merged, isRow, index) {
+        const counts = isRow ? getRowCounts(merged, index) : getColCounts(merged, index);
+        if (counts.target !== SIZE - 1) return null;
+
+        // Check adjacent lines for dead ends
+        const adjIndices = isRow ? [index - 1, index + 1] : [index - 1, index + 1];
+        
+        for (const adjIndex of adjIndices) {
+            if (adjIndex < 0 || adjIndex >= SIZE) continue;
+            
+            // Iterate through cells in the line
+            for (let i = 0; i < SIZE; i++) {
+                const deadEndR = isRow ? adjIndex : i;
+                const deadEndC = isRow ? i : adjIndex;
+                
+                if (isTargetDeadEnd(deadEndR, deadEndC)) {
+                    const cellR = isRow ? index : i;
+                    const cellC = isRow ? i : index;
+                    const idx = cellR * SIZE + cellC;
+                    
                         if (merged[idx] === 0) {
+                        const lineName = isRow ? `row ${rowToNumber(index)}` : `column ${colToLetter(index)}`;
                             return {
-                                message: `Cell ${cellRef(r, c)} must be a wall. It's adjacent to a dead end, and row ${rowToNumber(r)} needs ${SIZE - 1} walls.`,
-                                highlight: { type: 'cell', r, c },
-                                cells: [{ r, c }], shouldBe: 'wall'
+                            message: `Cell ${cellRef(cellR, cellC)} must be a wall. It's adjacent to a dead end, and ${lineName} needs ${SIZE - 1} walls.`,
+                            highlight: { type: 'cell', r: cellR, c: cellC },
+                            cells: [{ r: cellR, c: cellC }], shouldBe: 'wall'
                             };
                         }
                     }
                 }
             }
+        
+        return null;
         }
+
+    // Check rows
+    for (let r = 0; r < SIZE; r++) {
+        const hint = checkLineForDeadEndAdjacent(merged, true, r);
+        if (hint) return hint;
     }
 
-    // Check columns that need N-1 walls
+    // Check columns
     for (let c = 0; c < SIZE; c++) {
-        const { walls, target } = getColCounts(merged, c);
-        if (target === SIZE - 1) {
-            for (const adjC of [c - 1, c + 1]) {
-                if (adjC < 0 || adjC >= SIZE) continue;
-                for (let r = 0; r < SIZE; r++) {
-                    if (isTargetDeadEnd(r, adjC)) {
-                        const idx = r * SIZE + c;
-                        if (merged[idx] === 0) {
+        const hint = checkLineForDeadEndAdjacent(merged, false, c);
+        if (hint) return hint;
+    }
+
+    return null;
+}
+
+// Helper function to check a dead end one wall case
+// Returns path hint or wall hint as appropriate
+function checkDeadEndOneWallCase(merged, r, c, isRow, isEdge, remainingWalls, neighborState) {
+    // neighborState contains: leftIsWall, rightIsWall, aboveIsWall, belowIsWall,
+    // leftIsEmpty, rightIsEmpty, aboveIsEmpty, belowIsEmpty
+    const { leftIsWall, rightIsWall, aboveIsWall, belowIsWall,
+            leftIsEmpty, rightIsEmpty, aboveIsEmpty, belowIsEmpty } = neighborState;
+    
+    // Count existing walls around dead end
+    const existingWalls = (leftIsWall ? 1 : 0) + (rightIsWall ? 1 : 0) + 
+                          (aboveIsWall ? 1 : 0) + (belowIsWall ? 1 : 0);
+    const wallsStillNeeded = 3 - existingWalls;
+    
+    if (wallsStillNeeded <= 0) return null; // Dead end already satisfied
+    
+    // For edge cases, we know remainingWalls === 1
+    // For interior cases, we need to calculate if the dead end must get the wall
+    let wallsNeededFromLine = 0;
+    let potentialLineWalls = 0;
+    let potentialOutsideWalls = 0;
+    let maxWallsFromLine = 0;
+    
+    if (isEdge) {
+        // Edge case: remainingWalls is always 1, and dead end must get it
+        wallsNeededFromLine = 1;
+    } else {
+        // Interior case: calculate if dead end must get wall from the line
+        if (isRow) {
+            potentialLineWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
+            potentialOutsideWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
+        } else {
+            potentialLineWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
+            potentialOutsideWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
+        }
+        maxWallsFromLine = Math.min(remainingWalls, potentialLineWalls);
+        wallsNeededFromLine = Math.max(0, wallsStillNeeded - potentialOutsideWalls);
+    }
+    
+    // Only proceed if line needs exactly 1 wall AND dead end must get that wall
+    if (remainingWalls !== 1 || wallsNeededFromLine < 1) {
+        // Check for the other case: need 2+ walls from outside (only for interior cases)
+        if (!isEdge) {
+            // Calculate maxWallsFromLine if not already done
+            if (maxWallsFromLine === 0) {
+                if (isRow) {
+                    potentialLineWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
+                    potentialOutsideWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
+                } else {
+                    potentialLineWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
+                    potentialOutsideWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
+                }
+                maxWallsFromLine = Math.min(remainingWalls, potentialLineWalls);
+            }
+            if (wallsStillNeeded - maxWallsFromLine >= 2) {
+            const wallCells = [];
+            if (isRow) {
+                if (aboveIsEmpty) wallCells.push({ r: r - 1, c });
+                if (belowIsEmpty) wallCells.push({ r: r + 1, c });
+            } else {
+                if (leftIsEmpty) wallCells.push({ r, c: c - 1 });
+                if (rightIsEmpty) wallCells.push({ r, c: c + 1 });
+            }
+            
+            if (wallCells.length > 0) {
+                const cellsText = wallCells.length === 1 ? `Cell ${formatCellList(wallCells)} must be a wall` : `Cells ${formatCellList(wallCells)} must be walls`;
+                const lineName = isRow ? `row ${rowToNumber(r)}` : `column ${colToLetter(c)}`;
+                const perpName = isRow ? 'above and below' : 'left and right';
                             return {
-                                message: `Cell ${cellRef(r, c)} must be a wall. It's adjacent to a dead end, and column ${colToLetter(c)} needs ${SIZE - 1} walls.`,
-                                highlight: { type: 'cell', r, c },
-                                cells: [{ r, c }], shouldBe: 'wall'
+                    message: `${cellsText}. The dead end at ${cellRef(r, c)} needs ${wallsStillNeeded} more wall${wallsStillNeeded > 1 ? 's' : ''}, but ${lineName} can only provide ${maxWallsFromLine}, so the cells ${perpName} must be walls.`,
+                    highlight: wallCells.length === 1 ? { type: 'cell', r: wallCells[0].r, c: wallCells[0].c } : { type: 'cells', cells: wallCells },
+                    cells: wallCells, shouldBe: 'wall'
                             };
                         }
                     }
                 }
-            }
-        }
+        return null;
     }
+    
+    // Find non-adjacent empty cells that must be paths
+    const pathCells = isRow 
+        ? findEmptyCellsInRow(merged, r, { r, c })
+        : findEmptyCellsInCol(merged, c, { r, c });
+    
+                if (pathCells.length > 0) {
+                    const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
+        const lineName = isRow ? `Row ${rowToNumber(r)}` : `Column ${colToLetter(c)}`;
+                    return {
+            message: `${cellsText}. ${lineName} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
+                        highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
+                        cells: pathCells, shouldBe: 'path'
+                    };
+    }
+    
+    // All non-adjacent cells are already paths - check perpendicular cells
+    const perpCells = getPerpendicularCells(merged, r, c, isRow ? 'row' : 'col');
+    const wallCells = perpCells.filter(cell => cell.isEmpty).map(cell => ({ r: cell.r, c: cell.c }));
+
+                if (wallCells.length > 0) {
+        const cellsText = formatCellList(wallCells);
+        const lineName = isRow ? `row ${rowToNumber(r)}` : `column ${colToLetter(c)}`;
+        const perpLineName = isRow ? `column ${colToLetter(c)}` : `row ${rowToNumber(r)}`;
+                    return {
+            message: `The exit for the dead end at ${cellRef(r, c)} must be in ${lineName}. The dead end needs 3 walls total, so the adjacent cell${wallCells.length > 1 ? 's' : ''} at ${cellsText} in ${perpLineName} must be ${wallCells.length === 1 ? 'a wall' : 'walls'}.`,
+                        highlight: wallCells.length === 1 ? { type: 'cell', r: wallCells[0].r, c: wallCells[0].c } : { type: 'cells', cells: wallCells },
+                        cells: wallCells, shouldBe: 'wall'
+                    };
+                }
+    
     return null;
 }
 
@@ -5040,36 +5226,38 @@ function hintDeadEndAdjacent(merged) {
 // The wall must be adjacent to the dead end, so all other empty cells must be paths
 // Only applies to dead ends with 2 possible exits within the row/col (not corner dead ends)
 function hintEdgeDeadEndOneWall(merged) {
+    // Helper to get neighbor state for a dead end
+    function getNeighborState(merged, r, c) {
+            const leftIdx = r * SIZE + (c - 1);
+            const rightIdx = r * SIZE + (c + 1);
+            const aboveIdx = (r - 1) * SIZE + c;
+            const belowIdx = (r + 1) * SIZE + c;
+
+        return {
+            leftIsWall: c === 0 || merged[leftIdx] === 1,
+            rightIsWall: c === SIZE - 1 || merged[rightIdx] === 1,
+            aboveIsWall: r === 0 || merged[aboveIdx] === 1,
+            belowIsWall: r === SIZE - 1 || merged[belowIdx] === 1,
+            leftIsEmpty: c > 0 && merged[leftIdx] === 0 && !isFixedPath(r, c - 1),
+            rightIsEmpty: c < SIZE - 1 && merged[rightIdx] === 0 && !isFixedPath(r, c + 1),
+            aboveIsEmpty: r > 0 && merged[aboveIdx] === 0 && !isFixedPath(r - 1, c),
+            belowIsEmpty: r < SIZE - 1 && merged[belowIdx] === 0 && !isFixedPath(r + 1, c)
+        };
+    }
+
     // Check edge rows (top and bottom)
     for (const r of [0, SIZE - 1]) {
         const { walls, target } = getRowCounts(merged, r);
         if (target - walls !== 1) continue;
 
-        // Find dead ends in this row that have 2 possible exits (not at corners)
         for (let c = 0; c < SIZE; c++) {
             if (!isTargetDeadEnd(r, c)) continue;
-
             // Skip corner dead ends - they only have 1 exit within the row
             if (c === 0 || c === SIZE - 1) continue;
 
-            // Found a non-corner dead end in an edge row needing 1 wall
-            // Collect all non-adjacent empty cells that must be paths
-            const pathCells = [];
-            for (let cc = 0; cc < SIZE; cc++) {
-                if (Math.abs(cc - c) <= 1) continue; // Skip adjacent cells
-                const idx = r * SIZE + cc;
-                if (merged[idx] === 0 && !isFixedPath(r, cc)) {
-                    pathCells.push({ r, c: cc });
-                }
-            }
-            if (pathCells.length > 0) {
-                const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
-                return {
-                    message: `${cellsText}. Row ${rowToNumber(r)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
-                    cells: pathCells, shouldBe: 'path'
-                };
-            }
+            const neighborState = getNeighborState(merged, r, c);
+            const hint = checkDeadEndOneWallCase(merged, r, c, true, true, 1, neighborState);
+            if (hint) return hint;
         }
     }
 
@@ -5078,200 +5266,44 @@ function hintEdgeDeadEndOneWall(merged) {
         const { walls, target } = getColCounts(merged, c);
         if (target - walls !== 1) continue;
 
-        // Find dead ends in this column that have 2 possible exits (not at corners)
         for (let r = 0; r < SIZE; r++) {
             if (!isTargetDeadEnd(r, c)) continue;
-
             // Skip corner dead ends - they only have 1 exit within the column
             if (r === 0 || r === SIZE - 1) continue;
 
-            // Found a non-corner dead end in an edge column needing 1 wall
-            // Collect all non-adjacent empty cells that must be paths
-            const pathCells = [];
-            for (let rr = 0; rr < SIZE; rr++) {
-                if (Math.abs(rr - r) <= 1) continue; // Skip adjacent cells
-                const idx = rr * SIZE + c;
-                if (merged[idx] === 0 && !isFixedPath(rr, c)) {
-                    pathCells.push({ r: rr, c });
-                }
-            }
-            if (pathCells.length > 0) {
-                const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
-                return {
-                    message: `${cellsText}. Column ${colToLetter(c)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                    highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
-                    cells: pathCells, shouldBe: 'path'
-                };
-            }
+            const neighborState = getNeighborState(merged, r, c);
+            const hint = checkDeadEndOneWallCase(merged, r, c, false, true, 1, neighborState);
+            if (hint) return hint;
         }
     }
 
     // Check interior rows with dead ends
-    // A dead end needs 3 wall neighbors. If the row can only provide N more walls,
-    // and the dead end still needs more than N walls from the row direction (left/right),
-    // then the remaining walls must come from above/below.
     for (let r = 1; r < SIZE - 1; r++) {
         const { walls, target } = getRowCounts(merged, r);
-        const remainingWallsForRow = target - walls;
-        if (remainingWallsForRow < 1) continue;
+        const remainingWalls = target - walls;
+        if (remainingWalls < 1) continue;
 
         for (let c = 0; c < SIZE; c++) {
             if (!isTargetDeadEnd(r, c)) continue;
 
-            // Count walls the dead end already has and potential walls from each direction
-            const leftIdx = r * SIZE + (c - 1);
-            const rightIdx = r * SIZE + (c + 1);
-            const aboveIdx = (r - 1) * SIZE + c;
-            const belowIdx = (r + 1) * SIZE + c;
-
-            const leftIsWall = c === 0 || merged[leftIdx] === 1;
-            const rightIsWall = c === SIZE - 1 || merged[rightIdx] === 1;
-            const aboveIsWall = merged[aboveIdx] === 1;
-            const belowIsWall = merged[belowIdx] === 1;
-
-            const leftIsEmpty = c > 0 && merged[leftIdx] === 0 && !isFixedPath(r, c - 1);
-            const rightIsEmpty = c < SIZE - 1 && merged[rightIdx] === 0 && !isFixedPath(r, c + 1);
-            const aboveIsEmpty = merged[aboveIdx] === 0 && !isFixedPath(r - 1, c);
-            const belowIsEmpty = merged[belowIdx] === 0 && !isFixedPath(r + 1, c);
-
-            // Count existing walls around dead end
-            const existingWalls = (leftIsWall ? 1 : 0) + (rightIsWall ? 1 : 0) + (aboveIsWall ? 1 : 0) + (belowIsWall ? 1 : 0);
-            const wallsStillNeeded = 3 - existingWalls;
-
-            if (wallsStillNeeded <= 0) continue; // Dead end already satisfied
-
-            // Count how many walls could come from the row (left/right empty cells)
-            const potentialRowWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
-
-            // The row can provide at most min(remainingWallsForRow, potentialRowWalls) walls to this dead end
-            const maxWallsFromRow = Math.min(remainingWallsForRow, potentialRowWalls);
-
-            // How many walls could come from outside the row (above/below)?
-            const potentialOutsideWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
-
-            // How many walls MUST come from the row? (if outside can't provide enough)
-            const wallsNeededFromRow = Math.max(0, wallsStillNeeded - potentialOutsideWalls);
-
-            // How many walls MUST come from outside the row? (if row can't provide enough)
-            const wallsNeededFromOutside = Math.max(0, wallsStillNeeded - maxWallsFromRow);
-
-            // Path hint: only when row needs exactly 1 wall AND dead end MUST get that wall
-            // (i.e., the dead end can't get all its walls from above/below)
-            if (remainingWallsForRow === 1 && wallsNeededFromRow >= 1) {
-                const pathCells = [];
-                for (let cc = 0; cc < SIZE; cc++) {
-                    if (Math.abs(cc - c) <= 1) continue; // Skip adjacent cells
-                    const idx = r * SIZE + cc;
-                    if (merged[idx] === 0 && !isFixedPath(r, cc)) {
-                        pathCells.push({ r, c: cc });
-                    }
-                }
-                if (pathCells.length > 0) {
-                    const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
-                    return {
-                        message: `${cellsText}. Row ${rowToNumber(r)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                        highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
-                        cells: pathCells, shouldBe: 'path'
-                    };
-                }
-            }
-
-            // Wall hint: only when we need 2+ walls from outside (both above AND below must be walls)
-            if (wallsNeededFromOutside >= 2) {
-                const wallCells = [];
-                if (aboveIsEmpty) wallCells.push({ r: r - 1, c });
-                if (belowIsEmpty) wallCells.push({ r: r + 1, c });
-
-                if (wallCells.length > 0) {
-                    const cellsText = wallCells.length === 1 ? `Cell ${formatCellList(wallCells)} must be a wall` : `Cells ${formatCellList(wallCells)} must be walls`;
-                    return {
-                        message: `${cellsText}. The dead end at ${cellRef(r, c)} needs ${wallsStillNeeded} more wall${wallsStillNeeded > 1 ? 's' : ''}, but row ${rowToNumber(r)} can only provide ${maxWallsFromRow}, so the cells above and below must be walls.`,
-                        highlight: wallCells.length === 1 ? { type: 'cell', r: wallCells[0].r, c: wallCells[0].c } : { type: 'cells', cells: wallCells },
-                        cells: wallCells, shouldBe: 'wall'
-                    };
-                }
-            }
+            const neighborState = getNeighborState(merged, r, c);
+            const hint = checkDeadEndOneWallCase(merged, r, c, true, false, remainingWalls, neighborState);
+            if (hint) return hint;
         }
     }
 
-    // Check interior columns with dead ends (same logic as rows)
+    // Check interior columns with dead ends
     for (let c = 1; c < SIZE - 1; c++) {
         const { walls, target } = getColCounts(merged, c);
-        const remainingWallsForCol = target - walls;
-        if (remainingWallsForCol < 1) continue;
+        const remainingWalls = target - walls;
+        if (remainingWalls < 1) continue;
 
         for (let r = 0; r < SIZE; r++) {
             if (!isTargetDeadEnd(r, c)) continue;
 
-            const leftIdx = r * SIZE + (c - 1);
-            const rightIdx = r * SIZE + (c + 1);
-            const aboveIdx = (r - 1) * SIZE + c;
-            const belowIdx = (r + 1) * SIZE + c;
-
-            const aboveIsWall = r === 0 || merged[aboveIdx] === 1;
-            const belowIsWall = r === SIZE - 1 || merged[belowIdx] === 1;
-            const leftIsWall = merged[leftIdx] === 1;
-            const rightIsWall = merged[rightIdx] === 1;
-
-            const aboveIsEmpty = r > 0 && merged[aboveIdx] === 0 && !isFixedPath(r - 1, c);
-            const belowIsEmpty = r < SIZE - 1 && merged[belowIdx] === 0 && !isFixedPath(r + 1, c);
-            const leftIsEmpty = merged[leftIdx] === 0 && !isFixedPath(r, c - 1);
-            const rightIsEmpty = merged[rightIdx] === 0 && !isFixedPath(r, c + 1);
-
-            const existingWalls = (leftIsWall ? 1 : 0) + (rightIsWall ? 1 : 0) + (aboveIsWall ? 1 : 0) + (belowIsWall ? 1 : 0);
-            const wallsStillNeeded = 3 - existingWalls;
-
-            if (wallsStillNeeded <= 0) continue;
-
-            // Count how many walls could come from the column (above/below empty cells)
-            const potentialColWalls = (aboveIsEmpty ? 1 : 0) + (belowIsEmpty ? 1 : 0);
-            const maxWallsFromCol = Math.min(remainingWallsForCol, potentialColWalls);
-
-            // How many walls could come from outside the column (left/right)?
-            const potentialOutsideWalls = (leftIsEmpty ? 1 : 0) + (rightIsEmpty ? 1 : 0);
-
-            // How many walls MUST come from the column? (if outside can't provide enough)
-            const wallsNeededFromCol = Math.max(0, wallsStillNeeded - potentialOutsideWalls);
-
-            // How many walls MUST come from outside the column? (if column can't provide enough)
-            const wallsNeededFromOutside = Math.max(0, wallsStillNeeded - maxWallsFromCol);
-
-            // Path hint: only when column needs exactly 1 wall AND dead end MUST get that wall
-            // (i.e., the dead end can't get all its walls from left/right)
-            if (remainingWallsForCol === 1 && wallsNeededFromCol >= 1) {
-                const pathCells = [];
-                for (let rr = 0; rr < SIZE; rr++) {
-                    if (Math.abs(rr - r) <= 1) continue;
-                    const idx = rr * SIZE + c;
-                    if (merged[idx] === 0 && !isFixedPath(rr, c)) {
-                        pathCells.push({ r: rr, c });
-                    }
-                }
-                if (pathCells.length > 0) {
-                    const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
-                    return {
-                        message: `${cellsText}. Column ${colToLetter(c)} needs only 1 more wall, which must be adjacent to the dead end at ${cellRef(r, c)}.`,
-                        highlight: pathCells.length === 1 ? { type: 'cell', r: pathCells[0].r, c: pathCells[0].c } : { type: 'cells', cells: pathCells },
-                        cells: pathCells, shouldBe: 'path'
-                    };
-                }
-            }
-
-            // Wall hint: only when we need 2+ walls from outside (both left AND right must be walls)
-            if (wallsNeededFromOutside >= 2) {
-                const wallCells = [];
-                if (leftIsEmpty) wallCells.push({ r, c: c - 1 });
-                if (rightIsEmpty) wallCells.push({ r, c: c + 1 });
-
-                if (wallCells.length > 0) {
-                    const cellsText = wallCells.length === 1 ? `Cell ${formatCellList(wallCells)} must be a wall` : `Cells ${formatCellList(wallCells)} must be walls`;
-                    return {
-                        message: `${cellsText}. The dead end at ${cellRef(r, c)} needs ${wallsStillNeeded} more wall${wallsStillNeeded > 1 ? 's' : ''}, but column ${colToLetter(c)} can only provide ${maxWallsFromCol}, so the cells left and right must be walls.`,
-                        highlight: wallCells.length === 1 ? { type: 'cell', r: wallCells[0].r, c: wallCells[0].c } : { type: 'cells', cells: wallCells },
-                        cells: wallCells, shouldBe: 'wall'
-                    };
-                }
-            }
+            const neighborState = getNeighborState(merged, r, c);
+            const hint = checkDeadEndOneWallCase(merged, r, c, false, false, remainingWalls, neighborState);
+            if (hint) return hint;
         }
     }
 

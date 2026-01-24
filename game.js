@@ -4898,29 +4898,39 @@ function hintRowColCompletionCausesError(merged) {
 
 // Hint: Empty cell surrounded by 3+ walls must be a wall
 // An empty cell with 3+ walls around it cannot be a path (would be an invalid dead end)
-function hintEmptyDeadEndMustBeWall(merged) {
-    function checkEmptyCell(merged, r, c) {
-            const idx = r * SIZE + c;
-            // Only check empty cells
-        if (merged[idx] !== 0 || isFixedPath(r, c)) return null;
-            // Skip if it's a target dead end (those are valid path locations)
+function hintEmptyDeadEndMustBeWall(merged, forCell = null) {
+    function checkCell(merged, r, c) {
+        const idx = r * SIZE + c;
+        // Check both empty cells and path cells
+        const isPath = merged[idx] === 2 || isFixedPath(r, c);
+        const isEmpty = merged[idx] === 0 && !isFixedPath(r, c);
+        
+        if (!isEmpty && !isPath) return null;
+        
+        // Skip if it's a target dead end (those are valid path locations)
         if (isTargetDeadEnd(r, c)) return null;
 
         const { wallCount } = countNeighbors(merged, r, c);
 
-            // If 3+ walls, this cell must be a wall (can't be a path - would be invalid dead end)
-            if (wallCount >= 3) {
-                return {
-                    message: `Cell ${cellRef(r, c)} must be a wall. A path there would be a dead end with no exit.`,
-                    highlight: { type: 'cell', r, c },
-                    cells: [{ r, c }], shouldBe: 'wall'
-                };
-            }
+        // If exactly 3 walls (or 3+ for empty cells), this cell must be a wall
+        // For empty cells: 3+ walls means it would be an invalid dead end
+        // For path cells: exactly 3 walls means it IS an invalid dead end
+        if ((isEmpty && wallCount >= 3) || (isPath && wallCount === 3)) {
+            const message = isPath
+                ? `Cell ${cellRef(r, c)} is a path with 3 walls around it, making it a dead end. Since it's not a target dead end node, this is invalid. The cell must be a wall.`
+                : `Cell ${cellRef(r, c)} must be a wall. A path there would be a dead end with no exit.`;
+            
+            return {
+                message,
+                highlight: { type: 'cell', r, c },
+                cells: [{ r, c }], shouldBe: 'wall'
+            };
+        }
 
-    return null;
+        return null;
     }
 
-    return iterateAllCellsForHint(merged, checkEmptyCell);
+    return iterateAllCellsForHint(merged, checkCell, forCell);
 }
 
 // Hint 5: 2x2 area with 3 paths
@@ -5870,7 +5880,7 @@ function getHint() {
 
         // ===== LEVEL 3: MODERATE (pattern recognition or 2-step reasoning) =====
         // Empty cell surrounded by walls/edges would be invalid dead end
-        { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
+        { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged, null) },
         // Vault interior cells must be paths when only one vault position works
         { name: 'hintVaultInteriorMustBePath', fn: () => hintVaultInteriorMustBePath(merged) },
         // Vault exit cannot be adjacent to dead end in certain positions
@@ -5972,7 +5982,7 @@ function getHintForCell(targetR, targetC) {
         { name: 'hintPathMustExtend', fn: () => hintPathMustExtend(merged, forCell) },
 
         // ===== LEVEL 3: MODERATE =====
-        { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
+        { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged, forCell) },
         { name: 'hintVaultInteriorMustBePath', fn: () => hintVaultInteriorMustBePath(merged) },
         { name: 'hintVaultExitDeadEnd', fn: () => hintVaultExitDeadEnd(merged) },
         { name: 'hintDeadEndAdjacent', fn: () => hintDeadEndAdjacent(merged) },

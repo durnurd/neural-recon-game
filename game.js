@@ -520,6 +520,7 @@ let wallSwitchCount = 0; // Count how many times we've switched to walls
 let pathSwitchCount = 0; // Count how many times we've switched to paths
 let hasSeenDataVaultIntro = false; // Track if user has seen data vault intro
 let hasSeenAutoToolExplanation = false; // Track if user has seen Auto tool explanation
+let hasSeenForkExplanation = false; // Track if user has seen Fork explanation
 
 // Seeded random number generator (Mulberry32)
 let currentSeed = null;
@@ -3384,6 +3385,11 @@ document.getElementById('addLayerBtn').onclick = () => {
         return;
     }
     if(currentIdx < 3) {
+        // Show Fork explanation on first use
+        if (!hasSeenForkExplanation) {
+            showForkExplanation();
+        }
+        
         ChipSound.fork();
         saveUndoState();
         layers.push(Array(SIZE*SIZE).fill(0));
@@ -6011,31 +6017,28 @@ document.getElementById('hintBtn').onclick = () => {
 
     showHint(hint);
 };
-// Cookie helper functions for briefing preference
-function setBriefingCookie(dontShow) {
-    const days = 365;
-    const date = new Date();
-    date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-    document.cookie = `hideBriefingOnStartup=${dontShow ? '1' : '0'}; expires=${date.toUTCString()}; path=/; SameSite=Lax`;
+// localStorage helper functions for briefing preference (works with file:// protocol)
+function setBriefingPreference(dontShow) {
+    localStorage.setItem('hideBriefingOnStartup', dontShow ? '1' : '0');
 }
 
-function getBriefingCookie() {
-    const match = document.cookie.match(/(?:^|; )hideBriefingOnStartup=([^;]*)/);
-    return match ? match[1] === '1' : false;
+function getBriefingPreference() {
+    const value = localStorage.getItem('hideBriefingOnStartup');
+    return value === '1';
 }
 
-// Show briefing dialog and sync checkbox state with cookie
+// Show briefing dialog and sync checkbox state with preference
 function showBriefingDialog() {
     const checkbox = document.getElementById('dontShowBriefingCheckbox');
     if (checkbox) {
-        checkbox.checked = getBriefingCookie();
+        checkbox.checked = getBriefingPreference();
     }
     document.getElementById('briefingOverlay').style.display = 'flex';
 }
 
 // Show briefing on startup if not disabled
 function showBriefingOnStartup() {
-    if (!getBriefingCookie()) {
+    if (!getBriefingPreference()) {
         showBriefingDialog();
     }
 }
@@ -6050,7 +6053,7 @@ function closeBriefingDialog() {
     ChipSound.click();
     const checkbox = document.getElementById('dontShowBriefingCheckbox');
     if (checkbox) {
-        setBriefingCookie(checkbox.checked);
+        setBriefingPreference(checkbox.checked);
     }
     document.getElementById('briefingOverlay').style.display = 'none';
 }
@@ -6509,11 +6512,19 @@ document.getElementById('resetAllConfirmBtn').onclick = () => {
     } catch (e) {
         // Ignore storage errors
     }
+    
+    // Clear Fork explanation flag
+    try {
+        localStorage.removeItem('hasSeenForkExplanation');
+    } catch (e) {
+        // Ignore storage errors
+    }
 
     // Reset runtime state
     winStreak = 0;
     hasCompletedTutorial = false;
     hasSeenAutoToolExplanation = false;
+    hasSeenForkExplanation = false;
     hasSeenDataVaultIntro = false;
 
     // Update UI
@@ -6726,6 +6737,39 @@ function showAutoToolExplanation() {
     saveAutoToolExplanationSeen();
     
     const dialog = document.getElementById('autoToolDialog');
+    if (dialog) {
+        dialog.showModal();
+        // Scroll to top
+        dialog.scrollTop = 0;
+    }
+}
+
+// Load Fork explanation seen flag from localStorage
+function loadForkExplanationSeen() {
+    try {
+        return localStorage.getItem('hasSeenForkExplanation') === 'true';
+    } catch (e) {
+        return false;
+    }
+}
+
+// Save Fork explanation seen flag to localStorage
+function saveForkExplanationSeen() {
+    try {
+        localStorage.setItem('hasSeenForkExplanation', 'true');
+    } catch (e) {
+        // Ignore storage errors
+    }
+}
+
+// Show Fork explanation dialog
+function showForkExplanation() {
+    if (hasSeenForkExplanation) return;
+    
+    hasSeenForkExplanation = true;
+    saveForkExplanationSeen();
+    
+    const dialog = document.getElementById('forkDialog');
     if (dialog) {
         dialog.showModal();
         // Scroll to top
@@ -7303,7 +7347,7 @@ window.onload = () => {
         }
     });
 
-    // Show briefing on startup if not disabled by cookie (only if tutorial completed)
+    // Show briefing on startup if not disabled by preference (only if tutorial completed)
     if (hasCompletedTutorial) {
         showBriefingOnStartup();
     }
@@ -7356,6 +7400,9 @@ window.onload = () => {
     
     // Load Auto tool explanation seen flag
     hasSeenAutoToolExplanation = loadAutoToolExplanationSeen();
+    
+    // Load Fork explanation seen flag
+    hasSeenForkExplanation = loadForkExplanationSeen();
 
     // Tutorial dialog handlers
     const tutorialIntroDialog = document.getElementById('tutorialIntroDialog');
@@ -7479,6 +7526,13 @@ window.onload = () => {
     document.getElementById('autoToolGotItBtn').onclick = () => {
         ChipSound.click();
         autoToolDialog.close();
+    };
+
+    // Fork explanation dialog
+    const forkDialog = document.getElementById('forkDialog');
+    document.getElementById('forkGotItBtn').onclick = () => {
+        ChipSound.click();
+        forkDialog.close();
     };
 
     // Level unlocked dialog buttons

@@ -1037,6 +1037,17 @@ body {
     }
 }
 
+/* Fork dialog sections should always stack vertically */
+#forkDialog .auto-tool-sections {
+    flex-direction: column !important;
+}
+
+/* Fork dialog max width */
+#forkDialog {
+    max-width: 600px !important;
+    width: min(calc(100vw - 16px), 600px) !important;
+}
+
 #autoToolDialog {
     max-height: 85vh;
     overflow-y: auto;

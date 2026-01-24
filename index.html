@@ -970,6 +970,40 @@
         </div>
     </dialog>
 
+    <!-- Fork Explanation Dialog -->
+    <dialog id="forkDialog" class="tutorial-dialog">
+        <div class="tutorial-dialog-content">
+            <div class="tutorial-dialog-title">FORK</div>
+            <div class="tutorial-dialog-body" id="forkDialogBody">
+                <p>The <span class="tutorial-highlight theme-fork">Fork</span> feature lets you create a new layer to experiment with guesses.</p>
+                
+                <div class="auto-tool-sections">
+                    <div class="auto-tool-section">
+                        <p><span class="tutorial-highlight">HOW IT WORKS:</span></p>
+                        <div class="tutorial-rules">
+                            <p>• Tap <span class="briefing-tag theme-fork">Fork</span> to create a new experimental layer</p>
+                            <p>• You can create multiple levels of forks (up to 3)</p>
+                            <p>• Make guesses and see if they lead to contradictions</p>
+                            <p>• Use <span class="briefing-tag theme-commit">Commit</span> to merge your changes into the previous layer</p>
+                            <p>• Use <span class="briefing-tag theme-discard">Discard</span> to undo the fork and return to the previous layer</p>
+                        </div>
+                    </div>
+                    <div class="auto-tool-section">
+                        <p><span class="tutorial-highlight">WHEN TO USE:</span></p>
+                        <div class="tutorial-rules">
+                            <p>• When you're stuck and need to make an educated guess</p>
+                            <p>• To test if a cell should be a wall or path</p>
+                            <p>• If your guess leads to a contradiction, discard and try the opposite</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tutorial-dialog-buttons">
+                <button id="forkGotItBtn" class="cyber-btn btn-action">Got It</button>
+            </div>
+        </div>
+    </dialog>
+
     <!-- Theme System -->
     <script src="themes/theme-base.js"></script>
     <script src="themes/theme-manager.js"></script>

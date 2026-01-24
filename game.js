@@ -4386,6 +4386,147 @@ function hintVaultPerimeterComplete(merged) {
     return null;
 }
 
+// Hint: Vault exit cannot be adjacent to dead end in certain positions
+// A vault exit on the center of an edge cannot be adjacent to a dead end
+// A vault exit on a corner adjacent to a dead end cannot be on the grid edge
+function hintVaultExitDeadEnd(merged) {
+    if (!stockpilePos) return null;
+
+    const cacheR = stockpilePos.r;
+    const cacheC = stockpilePos.c;
+
+    // Find the vault position where all 9 interior cells are paths
+    // Check all possible 3x3 vault positions containing the stockpile
+    for (let vr = Math.max(0, cacheR - 2); vr <= Math.min(cacheR, SIZE - 3); vr++) {
+        for (let vc = Math.max(0, cacheC - 2); vc <= Math.min(cacheC, SIZE - 3); vc++) {
+            // Check if stockpile is in this vault
+            if (cacheR < vr || cacheR > vr + 2 || cacheC < vc || cacheC > vc + 2) continue;
+
+            // Check if all 9 interior cells are paths (vault is complete)
+            let vaultComplete = true;
+            for (let dr = 0; dr < 3 && vaultComplete; dr++) {
+                for (let dc = 0; dc < 3 && vaultComplete; dc++) {
+                    const cr = vr + dr, cc = vc + dc;
+                    const idx = cr * SIZE + cc;
+                    const isStockpileCell = cacheR === cr && cacheC === cc;
+                    // All cells must be paths (or stockpile/dead end which are fixed paths)
+                    if (merged[idx] !== 2 && !isTargetDeadEnd(cr, cc) && !isStockpileCell) {
+                        vaultComplete = false;
+                    }
+                }
+            }
+            if (!vaultComplete) continue;
+
+            // Check perimeter cells for potential exits (the 12 cells surrounding the vault)
+            const checkPerimeterExit = (pr, pc, isCorner, isEdgeCenter) => {
+                if (pr < 0 || pr >= SIZE || pc < 0 || pc >= SIZE) return null;
+                const pIdx = pr * SIZE + pc;
+                
+                // Only check empty cells (potential exits)
+                if (merged[pIdx] !== 0) return null;
+
+                // Verify this cell is directly adjacent to the vault (one of its 4 neighbors is in the vault)
+                let adjacentToVault = false;
+                for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                    const nr = pr + dr, nc = pc + dc;
+                    if (nr >= vr && nr <= vr + 2 && nc >= vc && nc <= vc + 2) {
+                        // This neighbor is inside the vault - since vault is complete, it's a path
+                        adjacentToVault = true;
+                        break;
+                    }
+                }
+                if (!adjacentToVault) return null;
+
+                // Check if this perimeter cell is adjacent to a dead end
+                let adjacentToDeadEnd = false;
+                for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                    const nr = pr + dr, nc = pc + dc;
+                    if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && isTargetDeadEnd(nr, nc)) {
+                        adjacentToDeadEnd = true;
+                        break;
+                    }
+                }
+
+                if (!adjacentToDeadEnd) return null;
+
+                // Case 1: Center of edge adjacent to dead end - cannot be exit
+                if (isEdgeCenter) {
+                    return {
+                        message: `Cell ${cellRef(pr, pc)} cannot be the vault exit. It's next to a dead end that would cut off the vault from the rest of the grid.`,
+                        highlight: { type: 'cell', r: pr, c: pc },
+                        cells: [{ r: pr, c: pc }], shouldBe: 'wall'
+                    };
+                }
+
+                // Case 2: Corner adjacent to dead end on grid edge - cannot be exit
+                if (isCorner && (pr === 0 || pr === SIZE - 1 || pc === 0 || pc === SIZE - 1)) {
+                    return {
+                        message: `Cell ${cellRef(pr, pc)} cannot be the vault exit. It's next to a dead end that would cut off the vault from the rest of the grid.`,
+                        highlight: { type: 'cell', r: pr, c: pc },
+                        cells: [{ r: pr, c: pc }], shouldBe: 'wall'
+                    };
+                }
+
+                return null;
+            };
+
+            // Check top perimeter (row above vault)
+            if (vr > 0) {
+                // Left corner
+                const topLeftHint = checkPerimeterExit(vr - 1, vc, true, false);
+                if (topLeftHint) return topLeftHint;
+                // Center
+                const topCenterHint = checkPerimeterExit(vr - 1, vc + 1, false, true);
+                if (topCenterHint) return topCenterHint;
+                // Right corner
+                const topRightHint = checkPerimeterExit(vr - 1, vc + 2, true, false);
+                if (topRightHint) return topRightHint;
+            }
+
+            // Check bottom perimeter (row below vault)
+            if (vr + 3 < SIZE) {
+                // Left corner
+                const bottomLeftHint = checkPerimeterExit(vr + 3, vc, true, false);
+                if (bottomLeftHint) return bottomLeftHint;
+                // Center
+                const bottomCenterHint = checkPerimeterExit(vr + 3, vc + 1, false, true);
+                if (bottomCenterHint) return bottomCenterHint;
+                // Right corner
+                const bottomRightHint = checkPerimeterExit(vr + 3, vc + 2, true, false);
+                if (bottomRightHint) return bottomRightHint;
+            }
+
+            // Check left perimeter (column left of vault)
+            if (vc > 0) {
+                // Top corner
+                const leftTopHint = checkPerimeterExit(vr, vc - 1, true, false);
+                if (leftTopHint) return leftTopHint;
+                // Center
+                const leftCenterHint = checkPerimeterExit(vr + 1, vc - 1, false, true);
+                if (leftCenterHint) return leftCenterHint;
+                // Bottom corner
+                const leftBottomHint = checkPerimeterExit(vr + 2, vc - 1, true, false);
+                if (leftBottomHint) return leftBottomHint;
+            }
+
+            // Check right perimeter (column right of vault)
+            if (vc + 3 < SIZE) {
+                // Top corner
+                const rightTopHint = checkPerimeterExit(vr, vc + 3, true, false);
+                if (rightTopHint) return rightTopHint;
+                // Center
+                const rightCenterHint = checkPerimeterExit(vr + 1, vc + 3, false, true);
+                if (rightCenterHint) return rightCenterHint;
+                // Bottom corner
+                const rightBottomHint = checkPerimeterExit(vr + 2, vc + 3, true, false);
+                if (rightBottomHint) return rightBottomHint;
+            }
+        }
+    }
+
+    return null;
+}
+
 // Hint: If placing a wall/path would complete a row/column and cause an obvious error, cell must be opposite
 // Errors checked: 2x2 path block (outside vault), invalid dead end, dead end with multiple exits, disconnected paths
 function hintRowColCompletionCausesError(merged) {
@@ -5613,6 +5754,8 @@ function getHint() {
         { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
         // Vault interior cells must be paths when only one vault position works
         { name: 'hintVaultInteriorMustBePath', fn: () => hintVaultInteriorMustBePath(merged) },
+        // Vault exit cannot be adjacent to dead end in certain positions
+        { name: 'hintVaultExitDeadEnd', fn: () => hintVaultExitDeadEnd(merged) },
         // Two adjacent dead ends: the cell between them must connect them
         { name: 'hintDeadEndAdjacent', fn: () => hintDeadEndAdjacent(merged) },
         // Corner with flanking dead ends on both edges
@@ -5710,6 +5853,7 @@ function getHintForCell(targetR, targetC) {
         // ===== LEVEL 3: MODERATE =====
         { name: 'hintEmptyDeadEndMustBeWall', fn: () => hintEmptyDeadEndMustBeWall(merged) },
         { name: 'hintVaultInteriorMustBePath', fn: () => hintVaultInteriorMustBePath(merged) },
+        { name: 'hintVaultExitDeadEnd', fn: () => hintVaultExitDeadEnd(merged) },
         { name: 'hintDeadEndAdjacent', fn: () => hintDeadEndAdjacent(merged) },
         { name: 'hintCornerFlankingDeadEnds', fn: () => hintCornerFlankingDeadEnds(merged) },
 

@@ -3427,6 +3427,13 @@ document.getElementById('newMazeBtn').onclick = () => {
         ChipSound.error();
         return;
     }
+    
+    // If puzzle is won, behave like "Initialize Next Sequence" (no confirmation, keep streak)
+    if (isWon) {
+        init(false);
+        return;
+    }
+    
     confirmReset(() => {
         // Starting a new puzzle should terminate any active tutorial (including hints-only).
         if (isTutorialMode) {
@@ -6061,13 +6068,124 @@ function closeBriefingDialog() {
 
 document.getElementById('closeBriefingBtn').onclick = closeBriefingDialog;
 
-// Close briefing dialog on Escape key
+// Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    // Don't trigger shortcuts when typing in input fields
+    const activeElement = document.activeElement;
+    if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+        // Allow Escape to close dialogs even when typing
+        if (e.key === 'Escape') {
+            const briefingOverlay = document.getElementById('briefingOverlay');
+            if (briefingOverlay && briefingOverlay.style.display === 'flex') {
+                closeBriefingDialog();
+            }
+        }
+        return;
+    }
+
+    // Close briefing dialog on Escape key
     if (e.key === 'Escape') {
         const briefingOverlay = document.getElementById('briefingOverlay');
         if (briefingOverlay && briefingOverlay.style.display === 'flex') {
             closeBriefingDialog();
         }
+        return;
+    }
+
+    // Tool selection: 1-5 for Wall, Path, Erase, Auto, Hint
+    if (e.key >= '1' && e.key <= '5') {
+        const toolMap = {
+            '1': 'wall',
+            '2': 'path',
+            '3': 'erase',
+            '4': 'smart',
+            '5': 'hint'
+        };
+        const mode = toolMap[e.key];
+        
+        // Block hint mode if hints are not enabled
+        if (mode === 'hint' && !isHintsEnabled()) {
+            ChipSound.error();
+            return;
+        }
+        
+        // Block Auto and Erase tools in tutorial mode
+        if (isTutorialMode && !isTutorialHintsOnly && (mode === 'smart' || mode === 'erase')) {
+            ChipSound.error();
+            return;
+        }
+        
+        // In tutorial mode, block wrong tool selection
+        if (isTutorialMode && !isTutorialHintsOnly && tutorialHint && tutorialHint.shouldBe) {
+            const requiredTool = tutorialHint.shouldBe === 'wall' ? 'wall' : 'path';
+            if (mode !== requiredTool) {
+                ChipSound.error();
+                return;
+            }
+        }
+        
+        const btn = document.querySelector(`.mode-btn[data-mode="${mode}"]`);
+        if (btn) {
+            e.preventDefault();
+            btn.click();
+        }
+        return;
+    }
+
+    // F for Fork
+    if (e.key === 'f' || e.key === 'F') {
+        const addLayerBtn = document.getElementById('addLayerBtn');
+        if (addLayerBtn && !addLayerBtn.disabled) {
+            e.preventDefault();
+            addLayerBtn.click();
+        }
+        return;
+    }
+
+    // C for Commit
+    if (e.key === 'c' || e.key === 'C') {
+        // Only trigger if not Ctrl/Cmd+C (copy)
+        if (!e.ctrlKey && !e.metaKey) {
+            const commitBtn = document.getElementById('commitBtn');
+            if (commitBtn && !commitBtn.disabled) {
+                e.preventDefault();
+                commitBtn.click();
+            }
+        }
+        return;
+    }
+
+    // D for Discard
+    if (e.key === 'd' || e.key === 'D') {
+        const discardBtn = document.getElementById('discardBtn');
+        if (discardBtn && !discardBtn.disabled) {
+            e.preventDefault();
+            discardBtn.click();
+        }
+        return;
+    }
+
+    // N for Initialize (new puzzle)
+    if (e.key === 'n' || e.key === 'N') {
+        const newMazeBtn = document.getElementById('newMazeBtn');
+        if (newMazeBtn && !newMazeBtn.disabled) {
+            e.preventDefault();
+            newMazeBtn.click();
+        }
+        return;
+    }
+
+    // Ctrl+Z or CMD+Z for Undo
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
+        // Only trigger if not Ctrl/Cmd+Shift+Z (redo, if implemented)
+        if (!e.shiftKey) {
+            const undoBtn = document.getElementById('undoBtn');
+            if (undoBtn && !undoBtn.disabled) {
+                e.preventDefault();
+                undoBtn.click();
+            }
+        }
+        return;
     }
 });
 

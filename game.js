@@ -723,11 +723,10 @@ let moveCount = 0;
 let winStreak = 0;
 
 // ============================================
-// PERSISTENT PLAYER STATS (Cookie-based)
+// PERSISTENT PLAYER STATS (localStorage-based)
 // ============================================
 const PlayerStats = (() => {
-    const COOKIE_NAME = 'neuralReconStats';
-    const COOKIE_DAYS = 365 * 5; // 5 years
+    const STORAGE_KEY = 'neuralReconStats';
 
     const defaultStats = {
         totalWins: 0,
@@ -736,34 +735,26 @@ const PlayerStats = (() => {
         bySize: {}           // { "4": {wins, bestStreak, fastestTime, fewestMoves}, ... }
     };
 
-    function setCookie(name, value, days) {
-        const expires = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toUTCString();
-        document.cookie = `${name}=${encodeURIComponent(JSON.stringify(value))}; expires=${expires}; path=/; SameSite=Lax`;
-    }
-
-    function getCookie(name) {
-        const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-        if (match) {
-            try {
-                return JSON.parse(decodeURIComponent(match[2]));
-            } catch (e) {
-                return null;
-            }
-        }
-        return null;
-    }
-
     function load() {
-        const saved = getCookie(COOKIE_NAME);
-        if (saved) {
-            // Merge with defaults to handle new fields
-            return { ...defaultStats, ...saved };
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Merge with defaults to handle new fields
+                return { ...defaultStats, ...parsed };
+            }
+        } catch (e) {
+            console.warn('Failed to load player stats:', e);
         }
         return { ...defaultStats };
     }
 
     function save(stats) {
-        setCookie(COOKIE_NAME, stats, COOKIE_DAYS);
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+        } catch (e) {
+            console.warn('Failed to save player stats:', e);
+        }
     }
 
     let stats = load();
@@ -6244,14 +6235,13 @@ document.getElementById('musicToggleBtn').onclick = () => {
 
 // User preferences persistence (audio, decrypt overlay)
 function loadUserPreferences() {
-    const match = document.cookie.match(/neuralReconPrefs=([^;]+)/);
-    if (match) {
-        try {
-            const saved = JSON.parse(decodeURIComponent(match[1]));
-            return saved;
-        } catch (e) {
-            console.warn('Failed to parse user preferences cookie');
+    try {
+        const saved = localStorage.getItem('neuralReconPrefs');
+        if (saved) {
+            return JSON.parse(saved);
         }
+    } catch (e) {
+        console.warn('Failed to load user preferences:', e);
     }
     return { soundMuted: false, musicPlaying: true, decryptOverlay: false };
 }
@@ -6262,30 +6252,36 @@ function saveUserPreferences() {
         musicPlaying: ChipMusic.isPlaying(),
         decryptOverlay: showKey
     };
-    const expires = new Date(Date.now() + 365 * 5 * 24 * 60 * 60 * 1000).toUTCString();
-    document.cookie = `neuralReconPrefs=${encodeURIComponent(JSON.stringify(settings))}; expires=${expires}; path=/; SameSite=Lax`;
+    try {
+        localStorage.setItem('neuralReconPrefs', JSON.stringify(settings));
+    } catch (e) {
+        console.warn('Failed to save user preferences:', e);
+    }
 }
 
-// Assist Mode toggle system with cookie persistence
+// Assist Mode toggle system with localStorage persistence
 function loadAssistSettings() {
-    const match = document.cookie.match(/neuralReconAssist=([^;]+)/);
-    if (match) {
-        try {
-            const saved = JSON.parse(decodeURIComponent(match[1]));
+    try {
+        const saved = localStorage.getItem('neuralReconAssist');
+        if (saved) {
+            const parsed = JSON.parse(saved);
             // Merge saved settings with defaults (in case new settings are added)
-            Object.assign(assistSettings, saved);
-            if (saved.visualHints) Object.assign(assistSettings.visualHints, saved.visualHints);
-            if (saved.autoFill) Object.assign(assistSettings.autoFill, saved.autoFill);
-        } catch (e) {
-            console.warn('Failed to parse assist settings cookie');
+            Object.assign(assistSettings, parsed);
+            if (parsed.visualHints) Object.assign(assistSettings.visualHints, parsed.visualHints);
+            if (parsed.autoFill) Object.assign(assistSettings.autoFill, parsed.autoFill);
         }
+    } catch (e) {
+        console.warn('Failed to load assist settings:', e);
     }
     updateAssistUI();
 }
 
 function saveAssistSettings() {
-    const expires = new Date(Date.now() + 365 * 5 * 24 * 60 * 60 * 1000).toUTCString();
-    document.cookie = `neuralReconAssist=${encodeURIComponent(JSON.stringify(assistSettings))}; expires=${expires}; path=/; SameSite=Lax`;
+    try {
+        localStorage.setItem('neuralReconAssist', JSON.stringify(assistSettings));
+    } catch (e) {
+        console.warn('Failed to save assist settings:', e);
+    }
 }
 
 function updateToggleUI(btnId, stateId, enabled) {

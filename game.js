@@ -6240,7 +6240,14 @@ function applyHintCells(hint) {
     const merged = getMergedBoard();
     let appliedAny = false;
 
-    for (const cell of hint.cells) {
+    // If validateOnlyHighlighted is set, only apply to highlighted cells
+    const cellsToApply = hint.validateOnlyHighlighted && hint.highlight 
+        ? (hint.highlight.type === 'cell' 
+            ? [{ r: hint.highlight.r, c: hint.highlight.c }]
+            : (hint.highlight.cells || []))
+        : hint.cells;
+
+    for (const cell of cellsToApply) {
         const idx = cell.r * SIZE + cell.c;
 
         // Skip if cell is already filled

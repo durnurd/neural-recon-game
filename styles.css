@@ -28,11 +28,6 @@
     --safe-area-right: env(safe-area-inset-right, 0px);
 }
 
-/* Universal monospace font */
-*, *::before, *::after {
-    font-family: monospace;
-}
-
 html, body {
     width: 100%; height: 100%; margin: 0; padding: 0; overflow-x: hidden;
     position: fixed; overscroll-behavior-y: contain;

@@ -5930,7 +5930,7 @@ function checkDeadEndOneWallCase(merged, r, c, isRow, isEdge, remainingWalls, ne
                 if (leftIsEmpty) wallCells.push({ r, c: c - 1 });
                 if (rightIsEmpty) wallCells.push({ r, c: c + 1 });
             }
-            
+
             if (wallCells.length > 0) {
                 const cellsText = wallCells.length === 1 ? `Cell ${formatCellList(wallCells)} must be a wall` : `Cells ${formatCellList(wallCells)} must be walls`;
                 const lineName = isRow ? `row ${rowToNumber(r)}` : `column ${colToLetter(c)}`;
@@ -5945,12 +5945,23 @@ function checkDeadEndOneWallCase(merged, r, c, isRow, isEdge, remainingWalls, ne
                 }
         return null;
     }
-    
+
+    // Check if the dead end already has an adjacent wall in the row/column direction
+    // If it does, we can't conclude that the remaining wall must be adjacent to it
+    const hasAdjacentWallInLine = isRow
+        ? (leftIsWall || rightIsWall)
+        : (aboveIsWall || belowIsWall);
+
+    if (hasAdjacentWallInLine) {
+        // Dead end already has a wall in this direction, so we can't use this hint
+        return null;
+    }
+
     // Find non-adjacent empty cells that must be paths
-    const pathCells = isRow 
+    const pathCells = isRow
         ? findEmptyCellsInRow(merged, r, { r, c })
         : findEmptyCellsInCol(merged, c, { r, c });
-    
+
                 if (pathCells.length > 0) {
                     const cellsText = pathCells.length === 1 ? `Cell ${formatCellList(pathCells)} must be a path` : `Cells ${formatCellList(pathCells)} must be paths`;
         const lineName = isRow ? `Row ${rowToNumber(r)}` : `Column ${colToLetter(c)}`;

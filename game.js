@@ -5716,14 +5716,25 @@ function hintEdgeCornerDeadEnd(merged) {
             }
             // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
             // to avoid creating a 2x2 path area
+            // Only applies if there are no dead ends between the corner and the target cell
             if (!isTargetDeadEnd(r, 0) && SIZE > 2) {
                 const checkC2 = 2;
                 if (merged[r * SIZE + checkC2] === 0 && !isFixedPath(r, checkC2)) {
-                    return {
-                        message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
-                        highlight: { type: 'cell', r, c: checkC2 },
-                        cells: [{ r, c: checkC2 }], shouldBe: 'path'
-                    };
+                    // Check if there are any dead ends between corner and target cell
+                    let hasDeadEndBetween = false;
+                    for (let c = 1; c < checkC2; c++) {
+                        if (isTargetDeadEnd(r, c)) {
+                            hasDeadEndBetween = true;
+                            break;
+                        }
+                    }
+                    if (!hasDeadEndBetween) {
+                        return {
+                            message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                            highlight: { type: 'cell', r, c: checkC2 },
+                            cells: [{ r, c: checkC2 }], shouldBe: 'path'
+                        };
+                    }
                 }
             }
         }
@@ -5742,14 +5753,25 @@ function hintEdgeCornerDeadEnd(merged) {
             }
             // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
             // to avoid creating a 2x2 path area
+            // Only applies if there are no dead ends between the corner and the target cell
             if (!isTargetDeadEnd(r, SIZE - 1) && SIZE > 2) {
                 const checkC2 = SIZE - 3;
                 if (merged[r * SIZE + checkC2] === 0 && !isFixedPath(r, checkC2)) {
-                    return {
-                        message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
-                        highlight: { type: 'cell', r, c: checkC2 },
-                        cells: [{ r, c: checkC2 }], shouldBe: 'path'
-                    };
+                    // Check if there are any dead ends between corner and target cell
+                    let hasDeadEndBetween = false;
+                    for (let c = checkC2 + 1; c < SIZE - 1; c++) {
+                        if (isTargetDeadEnd(r, c)) {
+                            hasDeadEndBetween = true;
+                            break;
+                        }
+                    }
+                    if (!hasDeadEndBetween) {
+                        return {
+                            message: `Cell ${cellRef(r, checkC2)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                            highlight: { type: 'cell', r, c: checkC2 },
+                            cells: [{ r, c: checkC2 }], shouldBe: 'path'
+                        };
+                    }
                 }
             }
         }
@@ -5774,14 +5796,25 @@ function hintEdgeCornerDeadEnd(merged) {
             }
             // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
             // to avoid creating a 2x2 path area
+            // Only applies if there are no dead ends between the corner and the target cell
             if (!isTargetDeadEnd(0, c) && SIZE > 2) {
                 const checkR2 = 2;
                 if (merged[checkR2 * SIZE + c] === 0 && !isFixedPath(checkR2, c)) {
-                    return {
-                        message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
-                        highlight: { type: 'cell', r: checkR2, c },
-                        cells: [{ r: checkR2, c }], shouldBe: 'path'
-                    };
+                    // Check if there are any dead ends between corner and target cell
+                    let hasDeadEndBetween = false;
+                    for (let r = 1; r < checkR2; r++) {
+                        if (isTargetDeadEnd(r, c)) {
+                            hasDeadEndBetween = true;
+                            break;
+                        }
+                    }
+                    if (!hasDeadEndBetween) {
+                        return {
+                            message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                            highlight: { type: 'cell', r: checkR2, c },
+                            cells: [{ r: checkR2, c }], shouldBe: 'path'
+                        };
+                    }
                 }
             }
         }
@@ -5799,14 +5832,25 @@ function hintEdgeCornerDeadEnd(merged) {
             }
             // Additional check: if corner is not a marked dead end, the cell two positions away must also be a path
             // to avoid creating a 2x2 path area
+            // Only applies if there are no dead ends between the corner and the target cell
             if (!isTargetDeadEnd(SIZE - 1, c) && SIZE > 2) {
                 const checkR2 = SIZE - 3;
                 if (merged[checkR2 * SIZE + c] === 0 && !isFixedPath(checkR2, c)) {
-                    return {
-                        message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
-                        highlight: { type: 'cell', r: checkR2, c },
-                        cells: [{ r: checkR2, c }], shouldBe: 'path'
-                    };
+                    // Check if there are any dead ends between corner and target cell
+                    let hasDeadEndBetween = false;
+                    for (let r = checkR2 + 1; r < SIZE - 1; r++) {
+                        if (isTargetDeadEnd(r, c)) {
+                            hasDeadEndBetween = true;
+                            break;
+                        }
+                    }
+                    if (!hasDeadEndBetween) {
+                        return {
+                            message: `Cell ${cellRef(checkR2, c)} must be a path. A wall there would force a dead end or 2x2 path area in the corner.`,
+                            highlight: { type: 'cell', r: checkR2, c },
+                            cells: [{ r: checkR2, c }], shouldBe: 'path'
+                        };
+                    }
                 }
             }
         }

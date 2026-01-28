@@ -1156,16 +1156,21 @@ async function startDailyPuzzle() {
         return;
     }
     
-    // Check if already completed today
+    // Check if already completed today - show results without changing game state
     if (DailyPuzzleState.isCompletedToday(dateString)) {
         showDailyPuzzleComplete();
         return;
     }
     
-    // Save regular game state before switching to daily puzzle (if not already in daily mode)
+    // Only save/modify state if we're actually entering daily puzzle mode
+    // Save regular game state before switching (if not already in daily mode)
+    // Don't save if the game was already won
     if (!isDailyPuzzle && hasCompletedTutorial && !isTutorialMode && !isWon) {
         GameState.save();
     }
+    
+    // Hide victory overlay if it was showing from regular game
+    document.getElementById('victoryOverlay').classList.remove('visible');
     
     isDailyPuzzle = true;
 
@@ -1226,17 +1231,27 @@ function restoreDailyPuzzleState(state) {
 
 // Exit daily puzzle mode and return to normal game
 function exitDailyPuzzle() {
+    // If not actually in daily puzzle mode (e.g., just viewing completed results), do nothing
+    if (!isDailyPuzzle) {
+        return;
+    }
+    
     isDailyPuzzle = false;
     updateDailyPuzzleUI(false);
     
+    // Hide victory overlay in case it was showing from daily puzzle
+    document.getElementById('victoryOverlay').classList.remove('visible');
+    
     // Try to restore saved regular game state, otherwise start new game
     const savedState = GameState.load();
-    if (savedState) {
+    if (savedState && !savedState.isWon) {
+        // Restore in-progress game
         restoreGameState(savedState);
     } else {
+        // No saved state or saved state was already won - start new game
         const maxUnlocked = getMaxUnlockedSize();
         document.getElementById('gridSizeSelect').value = String(maxUnlocked);
-        init(true);
+        init(false); // Use false to preserve streak if returning from a won game
     }
 }
 

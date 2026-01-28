@@ -1050,7 +1050,9 @@
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
+                // Register service worker with explicit scope to work at any path depth
+                const scope = './';
+                navigator.serviceWorker.register('./service-worker.js', { scope: scope })
                     .then((registration) => {
                         console.log('ServiceWorker registered:', registration.scope);
                     })

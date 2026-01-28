@@ -1,26 +1,29 @@
-﻿const CACHE_NAME = 'neural-recon-v0.0.0';
+﻿// Determine the base path dynamically from the service worker's location
+const BASE_PATH = self.location.pathname.substring(0, self.location.pathname.lastIndexOf('/') + 1);
+
+const CACHE_NAME = 'neural-recon-v0.0.0';
 const ASSETS_TO_CACHE = [
-  './',
-  './index.html',
-  './styles.css',
-  './game.js',
-  './manifest.json',
-  './icons/icon-72.png',
-  './icons/icon-96.png',
-  './icons/icon-128.png',
-  './icons/icon-144.png',
-  './icons/icon-152.png',
-  './icons/icon-180.png',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
+  BASE_PATH,
+  `${BASE_PATH}index.html`,
+  `${BASE_PATH}styles.css`,
+  `${BASE_PATH}game.js`,
+  `${BASE_PATH}manifest.json`,
+  `${BASE_PATH}icons/icon-72.png`,
+  `${BASE_PATH}icons/icon-96.png`,
+  `${BASE_PATH}icons/icon-128.png`,
+  `${BASE_PATH}icons/icon-144.png`,
+  `${BASE_PATH}icons/icon-152.png`,
+  `${BASE_PATH}icons/icon-180.png`,
+  `${BASE_PATH}icons/icon-192.png`,
+  `${BASE_PATH}icons/icon-512.png`,
   // Theme system
-  './themes/theme-base.js',
-  './themes/theme-manager.js',
-  './themes/theme-cyberpunk.js',
+  `${BASE_PATH}themes/theme-base.js`,
+  `${BASE_PATH}themes/theme-manager.js`,
+  `${BASE_PATH}themes/theme-cyberpunk.js`,
   // Maskable icons
-  './icons/icon-maskable.svg',
-  './icons/icon-maskable-192.png',
-  './icons/icon-maskable-512.png'
+  `${BASE_PATH}icons/icon-maskable.svg`,
+  `${BASE_PATH}icons/icon-maskable-192.png`,
+  `${BASE_PATH}icons/icon-maskable-512.png`
 ];
 
 // Install event - cache assets

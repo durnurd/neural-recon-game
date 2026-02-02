@@ -75,6 +75,10 @@
                         <span class="cell-icon cell-icon-locked"></span>
                         <span class="briefing-row-label"><span class="briefing-tag">Lock</span> — Like <span class="theme-walls">walls</span>, these block the <span class="theme-path">path</span>. However, these nodes are fixed on the grid and cannot be removed.</span>
                     </div>
+                    <div class="briefing-row">
+                        <span class="cell-icon cell-icon-junction"></span>
+                        <span class="briefing-row-label"><span class="briefing-tag">Junction</span> — On very large grids (16×16+) with multiple <span class="theme-vault">vaults</span>, these amber markers indicate structural junctions where 2×2 path squares are acceptable due to grid complexity.</span>
+                    </div>
                 </div>
 
                 <div class="briefing-section">
@@ -410,6 +414,7 @@
             <option value="6">6x6</option>
             <option value="7">7x7</option>
             <option value="8" selected>8x8</option>
+            <option value="16">16x16</option>
         </select>
         <button id="newMazeBtn" class="cyber-btn">Initialize</button>
         <button id="undoBtn" class="cyber-btn" disabled>Undo</button>

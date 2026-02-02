@@ -434,7 +434,9 @@ let currentIdx = 0;
 let lockedWalls = [];
 let targets = { r: [], c: [] };
 let forkAnchors = [null, null, null, null];
-let stockpilePos = null; // {r, c} position of data stockpile, or null if none
+let stockpilePos = null; // {r, c} position of data stockpile, or null if none (for SIZE < 16)
+let stockpilePositions = []; // Array of {r, c} positions for multiple vaults (for SIZE >= 16)
+let junctionNodes = []; // Array of cells that are marked as acceptable 2x2 path junctions (for 16x16 with multiple vaults)
 let isWon = false;
 let showKey = false;
 let undoState = null; // Single undo state: {layers, currentIdx, forkAnchors}
@@ -837,7 +839,7 @@ const PlayerStats = (() => {
 // ============================================
 // LEVEL UNLOCK SYSTEM
 // ============================================
-const GRID_SIZES = [4, 5, 6, 7, 8];
+const GRID_SIZES = [4, 5, 6, 7, 8, 16];
 const WINS_TO_UNLOCK_NEXT = 3; // Wins needed at a size to unlock next size
 
 // Get the maximum unlocked grid size based on stats
@@ -937,6 +939,8 @@ const GameState = (() => {
             lockedWalls,
             forkAnchors,
             stockpilePos,
+            stockpilePositions, // Save multiple vaults for 16x16
+            junctionNodes, // Save junction nodes for 16x16
             undoState,
             elapsedTime: totalElapsed, // Save total elapsed time instead of start time
             moveCount,
@@ -1115,6 +1119,8 @@ const DailyPuzzleState = (() => {
             lockedWalls,
             forkAnchors,
             stockpilePos,
+            stockpilePositions, // Save multiple vaults
+            junctionNodes, // Save junction nodes
             undoState,
             elapsedTime: totalElapsed,
             moveCount,
@@ -1209,6 +1215,8 @@ function restoreDailyPuzzleState(state) {
         : findLockedWallsForAmbiguousSolutions();
     forkAnchors = state.forkAnchors;
     stockpilePos = state.stockpilePos;
+    stockpilePositions = state.stockpilePositions || []; // Restore multiple vaults
+    junctionNodes = state.junctionNodes || []; // Restore junction nodes
     undoState = state.undoState;
     elapsedTimeBeforePause = state.elapsedTime || 0;
     gameStartTime = Date.now();
@@ -1538,6 +1546,8 @@ function restoreGameState(state) {
         : findLockedWallsForAmbiguousSolutions();
     forkAnchors = state.forkAnchors;
     stockpilePos = state.stockpilePos;
+    stockpilePositions = state.stockpilePositions || []; // Restore multiple vaults
+    junctionNodes = state.junctionNodes || []; // Restore junction nodes
     undoState = state.undoState;
     // Restore elapsed time: start fresh timer, carry over previous elapsed
     elapsedTimeBeforePause = state.elapsedTime || 0;
@@ -2161,28 +2171,43 @@ function has2x2PathBlock() {
 // Forces the room into the maze, adding walls as needed, then tries to fix connectivity
 function tryAddSecretRoom() {
     stockpilePos = null;
+    stockpilePositions = [];
+    junctionNodes = [];
 
     if (SIZE < DATA_VAULT_UNLOCK_SIZE) return; // No data vaults for sizes below unlock size
+
+    // For 16x16 grids, add 2-3 vaults
+    const numVaults = SIZE >= 16 ? (2 + Math.floor(seededRandom() * 2)) : 1; // 2 or 3 vaults for 16x16, 1 for others
 
     // Save original solution in case we need to revert
     const originalSolution = solution.map(row => [...row]);
 
-    // Candidate positions - prefer corners and edges
+    // Candidate positions
     const candidates = [];
-    // Corners (0 or 1 row/col from edge)
-    const edgeOffsets = [0, 1];
-    for (const rOff of edgeOffsets) {
-        for (const cOff of edgeOffsets) {
-            candidates.push({r: rOff, c: cOff, priority: 0});
-            candidates.push({r: rOff, c: SIZE - 3 - cOff, priority: 0});
-            candidates.push({r: SIZE - 3 - rOff, c: cOff, priority: 0});
-            candidates.push({r: SIZE - 3 - rOff, c: SIZE - 3 - cOff, priority: 0});
+
+    if (SIZE >= 16) {
+        // For 16x16, allow vaults anywhere in the grid (not just edges)
+        for (let r = 0; r <= SIZE - 3; r++) {
+            for (let c = 0; c <= SIZE - 3; c++) {
+                candidates.push({r, c, priority: 0});
+            }
         }
-    }
-    // Add some interior positions with lower priority
-    for (let r = 2; r <= SIZE - 5; r++) {
-        for (let c = 2; c <= SIZE - 5; c++) {
-            candidates.push({r, c, priority: 1});
+    } else {
+        // For smaller grids, prefer corners and edges
+        const edgeOffsets = [0, 1];
+        for (const rOff of edgeOffsets) {
+            for (const cOff of edgeOffsets) {
+                candidates.push({r: rOff, c: cOff, priority: 0});
+                candidates.push({r: rOff, c: SIZE - 3 - cOff, priority: 0});
+                candidates.push({r: SIZE - 3 - rOff, c: cOff, priority: 0});
+                candidates.push({r: SIZE - 3 - rOff, c: SIZE - 3 - cOff, priority: 0});
+            }
+        }
+        // Add some interior positions with lower priority
+        for (let r = 2; r <= SIZE - 5; r++) {
+            for (let c = 2; c <= SIZE - 5; c++) {
+                candidates.push({r, c, priority: 1});
+            }
         }
     }
 
@@ -2206,9 +2231,50 @@ function tryAddSecretRoom() {
         groupStart = groupEnd;
     }
 
+    // Helper function to check if a vault position is too close to existing vaults
+    const isTooCloseToExistingVaults = (r, c) => {
+        const minDistance = SIZE >= 16 ? 8 : 0; // Minimum 8 cells apart (center to center) for 16x16
+        for (const existing of stockpilePositions) {
+            const existingR = existing.vaultR;
+            const existingC = existing.vaultC;
+
+            // Check distance between vault centers (middle of 3x3 rooms)
+            const existingCenterR = existingR + 1;
+            const existingCenterC = existingC + 1;
+            const newCenterR = r + 1;
+            const newCenterC = c + 1;
+            const distance = Math.abs(existingCenterR - newCenterR) + Math.abs(existingCenterC - newCenterC);
+            if (distance < minDistance) return true;
+
+            // Also check that vault perimeters don't overlap or touch
+            // Each vault occupies a 3x3 area, with perimeter extending 1 cell around it
+            // So the full footprint is 5x5 (3x3 room + 1 cell perimeter on each side)
+            const newLeft = c - 1, newRight = c + 3;
+            const newTop = r - 1, newBottom = r + 3;
+            const existingLeft = existingC - 1, existingRight = existingC + 3;
+            const existingTop = existingR - 1, existingBottom = existingR + 3;
+
+            // Check if the 5x5 footprints overlap or are adjacent
+            const horizontalOverlap = !(newRight < existingLeft - 1 || newLeft > existingRight + 1);
+            const verticalOverlap = !(newBottom < existingTop - 1 || newTop > existingBottom + 1);
+
+            if (horizontalOverlap && verticalOverlap) return true;
+        }
+        return false;
+    };
+
     for (const {r, c} of candidates) {
-        // Restore original solution for each attempt
-        for (let i = 0; i < SIZE; i++) solution[i] = [...originalSolution[i]];
+        // Skip if too close to existing vaults
+        if (isTooCloseToExistingVaults(r, c)) continue;
+
+        // Save current solution state before attempting this vault
+        const beforeAttempt = solution.map(row => [...row]);
+
+        // For single vault (SIZE < 16), restore original solution for each attempt
+        // For multiple vaults, we already saved the current state above
+        if (SIZE < 16 || stockpilePositions.length === 0) {
+            for (let i = 0; i < SIZE; i++) solution[i] = [...originalSolution[i]];
+        }
 
         // Step 1: Find door candidates BEFORE modifying the maze
         // Look for path cells adjacent to where the perimeter walls will be
@@ -2333,12 +2399,19 @@ function tryAddSecretRoom() {
         // Step 5: Check connectivity and try to fix if broken
         // Pass room bounds so we don't open additional doors in the room perimeter
         if (!tryFixConnectivity(r, c)) {
-            continue; // Can't fix, try another position
+            // Restore solution before this attempt and try another position
+            for (let i = 0; i < SIZE; i++) solution[i] = [...beforeAttempt[i]];
+            continue;
         }
 
         // Step 6: Verify no 2x2 path clumps were created OUTSIDE the room
-        if (has2x2PathClumpOutsideRoom(r, c)) {
-            continue;
+        // For 16x16 with multiple vaults, skip this check - we'll handle it after all vaults are placed
+        if (SIZE < 16 || stockpilePositions.length === 0) {
+            if (has2x2PathClumpOutsideRoom(r, c)) {
+                // Restore solution before this attempt and try another position
+                for (let i = 0; i < SIZE; i++) solution[i] = [...beforeAttempt[i]];
+                continue;
+            }
         }
 
         // Success! Place stockpile randomly in the room
@@ -2348,19 +2421,80 @@ function tryAddSecretRoom() {
                 roomCells.push({r: r + dr, c: c + dc});
             }
         }
-        stockpilePos = roomCells[Math.floor(seededRandom() * roomCells.length)];
-        return;
+        const newStockpilePos = roomCells[Math.floor(seededRandom() * roomCells.length)];
+
+        // Add to array of vault positions
+        stockpilePositions.push({
+            ...newStockpilePos,
+            vaultR: r,
+            vaultC: c
+        });
+
+        // For backward compatibility, set stockpilePos to the first vault
+        if (stockpilePositions.length === 1) {
+            stockpilePos = newStockpilePos;
+        }
+
+        // If we've added enough vaults, we're done
+        if (stockpilePositions.length >= numVaults) {
+            // For 16x16 with multiple vaults, now mark junction nodes after all vaults are placed
+            if (SIZE >= 16) {
+                markJunctionNodesAfterAllVaults();
+            }
+            return;
+        }
+
+        // Otherwise, continue looking for more vaults (don't restore, keep building)
     }
 
-    // Failed to add room, restore original
-    for (let i = 0; i < SIZE; i++) solution[i] = [...originalSolution[i]];
+    // If we didn't get all the vaults we wanted, that's okay - keep what we have
+    // Only restore original if we got zero vaults
+    if (stockpilePositions.length === 0) {
+        for (let i = 0; i < SIZE; i++) solution[i] = [...originalSolution[i]];
+    } else if (SIZE >= 16 && stockpilePositions.length > 0) {
+        // Mark junction nodes for partial vault placement
+        markJunctionNodesAfterAllVaults();
+    }
+}
+
+// Check if all path cells in the solution are connected (single component)
+function isConnected() {
+    const pathCells = [];
+    for (let r = 0; r < SIZE; r++) {
+        for (let c = 0; c < SIZE; c++) {
+            if (solution[r][c] === 0) pathCells.push({r, c});
+        }
+    }
+    if (pathCells.length === 0) return false;
+
+    // BFS to find connected component from first path cell
+    const visited = Array(SIZE).fill(null).map(() => Array(SIZE).fill(false));
+    const queue = [pathCells[0]];
+    visited[pathCells[0].r][pathCells[0].c] = true;
+    let connectedCount = 1;
+
+    while (queue.length > 0) {
+        const {r, c} = queue.shift();
+        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE &&
+                solution[nr][nc] === 0 && !visited[nr][nc]) {
+                visited[nr][nc] = true;
+                connectedCount++;
+                queue.push({r: nr, c: nc});
+            }
+        });
+    }
+
+    return connectedCount === pathCells.length;
 }
 
 // Check if all path cells are connected, try to fix if not
 // roomR, roomC define the 3x3 room - don't open walls on its perimeter
 function tryFixConnectivity(roomR, roomC) {
-    // Helper to check if a wall cell is on the room perimeter
-    function isRoomPerimeter(wr, wc) {
+    // Helper to check if a wall cell is on ANY vault perimeter (current or previously placed)
+    function isAnyVaultPerimeter(wr, wc) {
+        // Check current vault being placed
         // Top perimeter: row roomR-1, cols roomC-1 to roomC+3
         if (wr === roomR - 1 && wc >= roomC - 1 && wc <= roomC + 3) return true;
         // Bottom perimeter: row roomR+3, cols roomC-1 to roomC+3
@@ -2369,6 +2503,21 @@ function tryFixConnectivity(roomR, roomC) {
         if (wc === roomC - 1 && wr >= roomR && wr <= roomR + 2) return true;
         // Right perimeter: col roomC+3, rows roomR to roomR+2
         if (wc === roomC + 3 && wr >= roomR && wr <= roomR + 2) return true;
+
+        // Check all previously placed vaults
+        for (const vault of stockpilePositions) {
+            const vr = vault.vaultR;
+            const vc = vault.vaultC;
+            // Top perimeter
+            if (wr === vr - 1 && wc >= vc - 1 && wc <= vc + 3) return true;
+            // Bottom perimeter
+            if (wr === vr + 3 && wc >= vc - 1 && wc <= vc + 3) return true;
+            // Left perimeter
+            if (wc === vc - 1 && wr >= vr && wr <= vr + 2) return true;
+            // Right perimeter
+            if (wc === vc + 3 && wr >= vr && wr <= vr + 2) return true;
+        }
+
         return false;
     }
 
@@ -2424,8 +2573,8 @@ function tryFixConnectivity(roomR, roomC) {
                 if (wallR < 0 || wallR >= SIZE || wallC < 0 || wallC >= SIZE) return;
                 if (solution[wallR][wallC] !== 1) return;
 
-                // Don't open walls on the room perimeter (would create extra doors)
-                if (isRoomPerimeter(wallR, wallC)) return;
+                // Don't open walls on any vault perimeter (would create extra doors)
+                if (isAnyVaultPerimeter(wallR, wallC)) return;
 
                 // Check if removing this wall connects to main component
                 [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr2, dc2]) => {
@@ -2465,6 +2614,168 @@ function has2x2PathClumpOutsideRoom(roomR, roomC) {
         }
     }
     return false;
+}
+
+// Mark 2x2 path clumps outside all vaults as acceptable junction nodes
+// Also tries to place walls at junction locations to reduce the number of junctions needed
+// This should only be called AFTER all vaults have been placed
+function markJunctionNodesAfterAllVaults() {
+    // First, collect all 2x2 path clumps
+    const clumps = [];
+    for (let r = 0; r < SIZE - 1; r++) {
+        for (let c = 0; c < SIZE - 1; c++) {
+            // Skip if this 2x2 is entirely within any vault
+            let insideVault = false;
+            for (const vault of stockpilePositions) {
+                const vr = vault.vaultR;
+                const vc = vault.vaultC;
+                if (r >= vr && r + 1 <= vr + 2 && c >= vc && c + 1 <= vc + 2) {
+                    insideVault = true;
+                    break;
+                }
+            }
+            if (insideVault) continue;
+
+            // Check if this is a 2x2 path clump
+            if (solution[r][c] === 0 && solution[r+1][c] === 0 &&
+                solution[r][c+1] === 0 && solution[r+1][c+1] === 0) {
+                clumps.push({
+                    r, c,
+                    cells: [
+                        {r, c},
+                        {r: r+1, c},
+                        {r, c: c+1},
+                        {r: r+1, c: c+1}
+                    ]
+                });
+            }
+        }
+    }
+
+    // Try to place walls at junction locations to eliminate clumps
+    let wallsAdded = 0;
+    for (const clump of clumps) {
+        // Try each cell in the clump as a potential wall
+        let wallPlaced = false;
+        for (const cell of clump.cells) {
+            // Skip if this cell is already a wall
+            if (solution[cell.r][cell.c] === 1) continue;
+
+            // Skip if this cell is a stockpile
+            if (isStockpileCell(cell.r, cell.c)) continue;
+
+            // Skip if this cell is a dead end
+            if (isTargetDeadEnd(cell.r, cell.c)) continue;
+
+            // Skip if this cell is inside any vault (not just the current one)
+            let insideAnyVault = false;
+            for (const vault of stockpilePositions) {
+                const vr = vault.vaultR;
+                const vc = vault.vaultC;
+                if (cell.r >= vr && cell.r < vr + 3 && cell.c >= vc && cell.c < vc + 3) {
+                    insideAnyVault = true;
+                    break;
+                }
+            }
+            if (insideAnyVault) continue;
+
+            // Skip if this cell is on any vault perimeter (would create extra doors)
+            let onVaultPerimeter = false;
+            for (const vault of stockpilePositions) {
+                const vr = vault.vaultR;
+                const vc = vault.vaultC;
+                // Top perimeter
+                if (cell.r === vr - 1 && cell.c >= vc - 1 && cell.c <= vc + 3) {
+                    onVaultPerimeter = true;
+                    break;
+                }
+                // Bottom perimeter
+                if (cell.r === vr + 3 && cell.c >= vc - 1 && cell.c <= vc + 3) {
+                    onVaultPerimeter = true;
+                    break;
+                }
+                // Left perimeter
+                if (cell.c === vc - 1 && cell.r >= vr && cell.r <= vr + 2) {
+                    onVaultPerimeter = true;
+                    break;
+                }
+                // Right perimeter
+                if (cell.c === vc + 3 && cell.r >= vr && cell.r <= vr + 2) {
+                    onVaultPerimeter = true;
+                    break;
+                }
+            }
+            if (onVaultPerimeter) continue;
+
+            // Try placing a wall here
+            const originalValue = solution[cell.r][cell.c];
+            solution[cell.r][cell.c] = 1;
+
+            // Check if this breaks connectivity
+            if (isConnected()) {
+                // Wall placement is valid, keep it
+                wallPlaced = true;
+                wallsAdded++;
+                break;
+            } else {
+                // Restore the path
+                solution[cell.r][cell.c] = originalValue;
+            }
+        }
+    }
+
+    // Update targets if we added walls
+    if (wallsAdded > 0) {
+        targets.r = solution.map(row => row.filter(v => v === 1).length);
+        targets.c = Array(SIZE).fill(0).map((_, c) => solution.filter(r => r[c] === 1).length);
+    }
+
+    // Now mark remaining 2x2 clumps as junction nodes
+    for (let r = 0; r < SIZE - 1; r++) {
+        for (let c = 0; c < SIZE - 1; c++) {
+            // Skip if this 2x2 is entirely within any vault
+            let insideVault = false;
+            for (const vault of stockpilePositions) {
+                const vr = vault.vaultR;
+                const vc = vault.vaultC;
+                if (r >= vr && r + 1 <= vr + 2 && c >= vc && c + 1 <= vc + 2) {
+                    insideVault = true;
+                    break;
+                }
+            }
+            if (insideVault) continue;
+
+            // Check if this is still a 2x2 path clump after wall placement
+            if (solution[r][c] === 0 && solution[r+1][c] === 0 &&
+                solution[r][c+1] === 0 && solution[r+1][c+1] === 0) {
+                // Mark all 4 cells as junction nodes
+                const cells = [
+                    {r, c},
+                    {r: r+1, c},
+                    {r, c: c+1},
+                    {r: r+1, c: c+1}
+                ];
+                for (const cell of cells) {
+                    // Skip if this cell is inside any vault
+                    let cellInVault = false;
+                    for (const vault of stockpilePositions) {
+                        const vr = vault.vaultR;
+                        const vc = vault.vaultC;
+                        if (cell.r >= vr && cell.r < vr + 3 && cell.c >= vc && cell.c < vc + 3) {
+                            cellInVault = true;
+                            break;
+                        }
+                    }
+                    if (cellInVault) continue;
+
+                    // Only add if not already in the list
+                    if (!junctionNodes.some(j => j.r === cell.r && j.c === cell.c)) {
+                        junctionNodes.push(cell);
+                    }
+                }
+            }
+        }
+    }
 }
 
 function handleCellAction(idx) {
@@ -2840,9 +3151,17 @@ function handleCellAction(idx) {
     }
 }
 
+// Helper to check if a cell is a stockpile (any vault)
+function isStockpileCell(r, c) {
+    if (SIZE >= 16) {
+        return stockpilePositions.some(pos => pos.r === r && pos.c === c);
+    }
+    return stockpilePos && stockpilePos.r === r && stockpilePos.c === c;
+}
+
 // Helper to check if a cell is a fixed path (dead end or stockpile)
 function isFixedPath(r, c) {
-    return isTargetDeadEnd(r, c) || (stockpilePos && stockpilePos.r === r && stockpilePos.c === c);
+    return isTargetDeadEnd(r, c) || isStockpileCell(r, c);
 }
 
 function handleLabelClick(isRow, index) {
@@ -3007,16 +3326,39 @@ function isValidAlternateSolution(merged) {
             // Check if all 4 corners are paths (not walls)
             if (corners.every(idx => merged[idx] !== 1)) {
                 // Allow 2x2 paths near stockpile (it's in a 3x3 room)
-                if (stockpilePos) {
-                    let nearStockpile = false;
-                    for (const idx of corners) {
-                        const cr = Math.floor(idx / SIZE), cc = idx % SIZE;
-                        const dr = Math.abs(cr - stockpilePos.r);
-                        const dc = Math.abs(cc - stockpilePos.c);
-                        if (dr <= 1 && dc <= 1) nearStockpile = true;
+                let nearStockpile = false;
+                for (const idx of corners) {
+                    const cr = Math.floor(idx / SIZE), cc = idx % SIZE;
+                    const checkNear = (pos) => {
+                        if (!pos) return false;
+                        const dr = Math.abs(cr - pos.r);
+                        const dc = Math.abs(cc - pos.c);
+                        return dr <= 1 && dc <= 1;
+                    };
+
+                    if (SIZE >= 16) {
+                        if (stockpilePositions.some(checkNear)) {
+                            nearStockpile = true;
+                            break;
+                        }
+                    } else if (stockpilePos && checkNear(stockpilePos)) {
+                        nearStockpile = true;
+                        break;
                     }
-                    if (nearStockpile) continue;
                 }
+                if (nearStockpile) continue;
+
+                // Allow 2x2 paths if they contain junction nodes (marked as acceptable)
+                let isJunction = false;
+                for (const idx of corners) {
+                    const cr = Math.floor(idx / SIZE), cc = idx % SIZE;
+                    if (junctionNodes.some(j => j.r === cr && j.c === cc)) {
+                        isJunction = true;
+                        break;
+                    }
+                }
+                if (isJunction) continue;
+
                 return false; // Invalid 2x2 path block
             }
         }
@@ -3059,6 +3401,11 @@ function isValidAlternateSolution(merged) {
 }
 
 function findLockedWallsForAmbiguousSolutions() {
+    // Skip expensive uniqueness checking for large grids (16x16+)
+    if (SIZE >= 16) {
+        return Array(SIZE * SIZE).fill(false);
+    }
+
     const locked = Array(SIZE * SIZE).fill(false);
     const merged = Array(SIZE * SIZE).fill(0);
     const solverGuard = {
@@ -3680,25 +4027,41 @@ function update() {
         return true;
     }
 
-    // Check if stockpile is in a room surrounded by 11 walls
-    let stockpileInWalledRoom = false;
-    if (stockpilePos) {
-        for (let roomR = Math.max(0, stockpilePos.r - 2); roomR <= stockpilePos.r; roomR++) {
-            for (let roomC = Math.max(0, stockpilePos.c - 2); roomC <= stockpilePos.c; roomC++) {
+    // Check if any stockpile is in a room surrounded by 11 walls
+    // For 16x16, we need to check each vault separately
+    const stockpilesInWalledRooms = new Set();
+    const checkStockpileInWalledRoom = (pos) => {
+        if (!pos) return false;
+        for (let roomR = Math.max(0, pos.r - 2); roomR <= pos.r; roomR++) {
+            for (let roomC = Math.max(0, pos.c - 2); roomC <= pos.c; roomC++) {
                 if (isRoomSurroundedByWalls(roomR, roomC)) {
-                    stockpileInWalledRoom = true;
-                    break;
+                    return true;
                 }
             }
-            if (stockpileInWalledRoom) break;
         }
+        return false;
+    };
+
+    if (SIZE >= 16) {
+        for (const pos of stockpilePositions) {
+            if (checkStockpileInWalledRoom(pos)) {
+                stockpilesInWalledRooms.add(`${pos.r},${pos.c}`);
+            }
+        }
+    }
+
+    // For backward compatibility with single vault
+    let stockpileInWalledRoom = false;
+    if (stockpilePos) {
+        stockpileInWalledRoom = checkStockpileInWalledRoom(stockpilePos);
     }
 
     // Find complete 3x3 path cells (for exemption from clump detection)
     const complete3x3Cells = new Set();
-    if (stockpilePos) {
-        for (let roomR = Math.max(0, stockpilePos.r - 2); roomR <= stockpilePos.r; roomR++) {
-            for (let roomC = Math.max(0, stockpilePos.c - 2); roomC <= stockpilePos.c; roomC++) {
+    const checkComplete3x3ForStockpile = (pos) => {
+        if (!pos) return;
+        for (let roomR = Math.max(0, pos.r - 2); roomR <= pos.r; roomR++) {
+            for (let roomC = Math.max(0, pos.c - 2); roomC <= pos.c; roomC++) {
                 if (isComplete3x3Path(roomR, roomC)) {
                     for (let dr = 0; dr < 3; dr++) {
                         for (let dc = 0; dc < 3; dc++) {
@@ -3708,6 +4071,14 @@ function update() {
                 }
             }
         }
+    };
+
+    if (SIZE >= 16) {
+        for (const pos of stockpilePositions) {
+            checkComplete3x3ForStockpile(pos);
+        }
+    } else if (stockpilePos) {
+        checkComplete3x3ForStockpile(stockpilePos);
     }
 
     const clumps = new Set();
@@ -3725,10 +4096,17 @@ function update() {
                 if(merged[idx] === 2) pathCount++;
                 else if(isTargetDeadEnd(cr, cc)) deadEndCount++;
                 // Check if this corner is the stockpile or orthogonally adjacent to it
-                if(stockpilePos) {
-                    const dr = Math.abs(cr - stockpilePos.r);
-                    const dc = Math.abs(cc - stockpilePos.c);
-                    if((dr === 0 && dc <= 1) || (dc === 0 && dr <= 1)) nearStockpile = true;
+                const checkNearStockpile = (pos) => {
+                    if (!pos) return false;
+                    const dr = Math.abs(cr - pos.r);
+                    const dc = Math.abs(cc - pos.c);
+                    return (dr === 0 && dc <= 1) || (dc === 0 && dr <= 1);
+                };
+
+                if (SIZE >= 16) {
+                    if (stockpilePositions.some(checkNearStockpile)) nearStockpile = true;
+                } else if (stockpilePos && checkNearStockpile(stockpilePos)) {
+                    nearStockpile = true;
                 }
             });
 
@@ -3768,9 +4146,13 @@ function update() {
             cell.appendChild(anchor);
         }
 
-        // Render stockpile if this is the stockpile position
-        if (stockpilePos && stockpilePos.r === r && stockpilePos.c === c) {
-            const stockpileState = stockpileInWalledRoom ? 'complete' : 'normal';
+        // Render stockpile if this is a stockpile position
+        if (isStockpileCell(r, c)) {
+            // Check if this specific stockpile is in a walled room
+            const thisStockpileComplete = SIZE >= 16
+                ? stockpilesInWalledRooms.has(`${r},${c}`)
+                : stockpileInWalledRoom;
+            const stockpileState = thisStockpileComplete ? 'complete' : 'normal';
             let stockpile;
 
             // Use theme renderer if available
@@ -3778,7 +4160,7 @@ function update() {
                 stockpile = ThemeManager.render.stockpile(stockpileState);
             } else {
                 stockpile = document.createElement('div');
-                stockpile.className = 'stockpile' + (stockpileInWalledRoom ? ' stockpile-complete' : '');
+                stockpile.className = 'stockpile' + (thisStockpileComplete ? ' stockpile-complete' : '');
                 const icon = document.createElement('div');
                 icon.className = 'stockpile-icon';
                 setAnimationDelay(icon);
@@ -3822,13 +4204,13 @@ function update() {
             cell.appendChild(box);
         }
 
-        const isStockpileCell = stockpilePos && stockpilePos.r === r && stockpilePos.c === c;
+        const isStockpileCellHere = isStockpileCell(r, c);
         if (merged[i] !== 1) {
             // Draw trace lines from path nodes, dead ends, or stockpile (which acts as path)
-            if (merged[i] === 2 || isTargetDeadEnd(r, c) || isStockpileCell) {
+            if (merged[i] === 2 || isTargetDeadEnd(r, c) || isStockpileCellHere) {
                 [[0,1,'e','h','trace-e'],[0,-1,'w','h','trace-w'],[1,0,'s','v','trace-s'],[-1,0,'n','v','trace-n']].forEach(([dr, dc, dir, orient, cls]) => {
                     let nr=r+dr, nc=c+dc, nIdx = nr*SIZE+nc;
-                    const isNeighborStockpile = stockpilePos && stockpilePos.r === nr && stockpilePos.c === nc;
+                    const isNeighborStockpile = isStockpileCell(nr, nc);
                     if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE && (merged[nIdx] === 2 || isTargetDeadEnd(nr, nc) || isNeighborStockpile)) {
                         const trace = document.createElement('div');
                         trace.className = `trace-line trace-${orient} ${cls}`;
@@ -3843,7 +4225,7 @@ function update() {
                             const iFromLower = layers[currentIdx][i] !== 2 && layers.slice(0, currentIdx).some(l => l[i] === 2);
                             const nFromLower = layers[currentIdx][nIdx] !== 2 && layers.slice(0, currentIdx).some(l => l[nIdx] === 2);
                             // Also consider dead ends and stockpile as "current" (not dimmed)
-                            const iIsCurrent = layers[currentIdx][i] === 2 || isTargetDeadEnd(r, c) || isStockpileCell;
+                            const iIsCurrent = layers[currentIdx][i] === 2 || isTargetDeadEnd(r, c) || isStockpileCellHere;
                             const nIsCurrent = layers[currentIdx][nIdx] === 2 || isTargetDeadEnd(nr, nc) || isNeighborStockpile;
                             if (!iIsCurrent && !nIsCurrent && (iFromLower || nFromLower)) {
                                 trace.classList.add('trace-dim');
@@ -3872,6 +4254,13 @@ function update() {
             }
             lockedWall.classList.add('wall-locked');
             cell.appendChild(lockedWall);
+        }
+
+        // Render junction node marker if this cell is a junction node
+        if (junctionNodes.some(j => j.r === r && j.c === c)) {
+            const junctionMarker = document.createElement('div');
+            junctionMarker.className = 'junction-node';
+            cell.appendChild(junctionMarker);
         }
 
         layers.forEach((layer, lIdx) => {
@@ -7060,7 +7449,7 @@ function showCellCoordinates(hint) {
         // Only add labels to empty cells (not walls, paths, dead ends, or stockpile)
         if (merged[i] !== 0) continue;
         if (isTargetDeadEnd(r, c)) continue;
-        if (stockpilePos && stockpilePos.r === r && stockpilePos.c === c) continue;
+        if (isStockpileCell(r, c)) continue;
 
         const label = document.createElement('div');
         label.className = 'cell-coord-label';

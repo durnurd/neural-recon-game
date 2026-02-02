@@ -654,6 +654,23 @@ body {
         rgba(0, 0, 0, 0) 4px
     );
 }
+
+/* Junction Node Marker - indicates acceptable 2x2 path areas */
+.junction-node {
+    position: absolute;
+    width: 30%;
+    height: 30%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--neon-amber);
+    border-radius: 50%;
+    opacity: 0.4;
+    box-shadow: 0 0 8px var(--neon-amber);
+    pointer-events: none;
+    z-index: 5;
+}
+
 .wall-error { background: var(--neon-red) !important; box-shadow: 0 0 15px var(--neon-red) !important; z-index: 15; animation-name: err-pulse; animation-duration: 1.5s; animation-timing-function: ease-in-out; animation-iteration-count: infinite; }
 .wall-error-dim { background: var(--neon-red) !important; box-shadow: none !important; opacity: 0.4; }
 
@@ -1509,6 +1526,18 @@ body {
     content: ''; width: 10px; height: 10px;
     background: var(--neon-amber);
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+}
+.cell-icon-junction {
+    position: relative;
+    background: var(--bg-black);
+    border-color: rgba(255, 170, 0, 0.4);
+}
+.cell-icon-junction::after {
+    content: ''; width: 8px; height: 8px;
+    background: var(--neon-amber);
+    border-radius: 50%;
+    opacity: 0.6;
+    box-shadow: 0 0 4px var(--neon-amber);
 }
 .briefing-row { display: flex; align-items: center; margin: 10px 0; gap: 10px; }
 .briefing-row-label { flex: 1; }

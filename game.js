@@ -4004,23 +4004,43 @@ function update() {
         return wallCount === 11; // 12 perimeter cells - 1 door = 11 walls
     }
 
-    // Check if a 3x3 room has all 9 cells as path AND contains stockpile
+    // Check if a 3x3 room has all 9 cells as path AND contains a stockpile
     // Stockpile cell counts as always having a path
     function isComplete3x3Path(roomR, roomC) {
         if (roomR < 0 || roomR + 2 >= SIZE || roomC < 0 || roomC + 2 >= SIZE) return false;
-        if (!stockpilePos) return false;
 
-        // Check if stockpile is in this room
-        if (stockpilePos.r < roomR || stockpilePos.r > roomR + 2 ||
-            stockpilePos.c < roomC || stockpilePos.c > roomC + 2) return false;
+        // Check if any stockpile is in this room
+        let hasStockpile = false;
+        let stockpileInRoom = null;
+
+        if (SIZE >= 16) {
+            // Check all vaults for 16x16
+            for (const pos of stockpilePositions) {
+                if (pos.r >= roomR && pos.r <= roomR + 2 &&
+                    pos.c >= roomC && pos.c <= roomC + 2) {
+                    hasStockpile = true;
+                    stockpileInRoom = pos;
+                    break;
+                }
+            }
+        } else if (stockpilePos) {
+            // Single vault for smaller grids
+            if (stockpilePos.r >= roomR && stockpilePos.r <= roomR + 2 &&
+                stockpilePos.c >= roomC && stockpilePos.c <= roomC + 2) {
+                hasStockpile = true;
+                stockpileInRoom = stockpilePos;
+            }
+        }
+
+        if (!hasStockpile) return false;
 
         // Check all 9 cells are path (merged === 2, dead end, or stockpile)
         for (let dr = 0; dr < 3; dr++) {
             for (let dc = 0; dc < 3; dc++) {
                 const idx = (roomR + dr) * SIZE + (roomC + dc);
                 const cr = roomR + dr, cc = roomC + dc;
-                const isStockpileCell = stockpilePos.r === cr && stockpilePos.c === cc;
-                if (merged[idx] !== 2 && !isTargetDeadEnd(cr, cc) && !isStockpileCell) return false;
+                const isStockpileCellHere = stockpileInRoom.r === cr && stockpileInRoom.c === cc;
+                if (merged[idx] !== 2 && !isTargetDeadEnd(cr, cc) && !isStockpileCellHere) return false;
             }
         }
 
